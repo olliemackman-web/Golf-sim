@@ -21,10 +21,15 @@ export function* until(cond: () => boolean, timeout = Infinity, onTick?: (dt: nu
 export function* all(cos: Co[]): Generator<void, void, number> {
   let live = cos.slice();
   let dt = 0;
-  for (;;) {
-    live = live.filter((c) => !c.next(dt).done);
-    if (!live.length) return;
-    dt = yield;
+  try {
+    for (;;) {
+      live = live.filter((c) => !c.next(dt).done);
+      if (!live.length) return;
+      dt = yield;
+    }
+  } finally {
+    // if this coroutine is cancelled, let the children run their cleanup too
+    for (const c of live) c.return(undefined);
   }
 }
 

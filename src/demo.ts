@@ -32,7 +32,7 @@ export function buildDemo(): Game {
   const cx = MAP / 2;
   const R = ROAD_ROW;
   // more land
-  for (let py = 5; py < 10; py++) for (let px = 2; px < 8; px++) if (!g.world.owned[py * 10 + px]) g.world.buyParcel(px, py);
+  for (let py = 3; py < 10; py++) for (let px = 1; px < 9; px++) if (!g.world.owned[py * 10 + px]) g.world.buyParcel(px, py);
   g.pf.invalidate();
   // clubhouse & amenities around the entrance
   g.placeItem('clubhouse', cx + 6, R - 16, 0);
@@ -45,6 +45,11 @@ export function buildDemo(): Game {
   g.paint(rect(cx + 2, R - 10, cx + 5, R - 2), Surf.Paving);
   for (const [x, y] of [[cx + 1, R - 3], [cx + 6, R - 3], [cx + 1, R - 6], [cx + 6, R - 6]]) g.placeItem('lamp', x, y, 0);
   for (let i = 0; i < 6; i++) g.placeItem(['flowers_red', 'flowers_yellow', 'flowers_purple'][i % 3], cx - 1 + (i % 2) * 8, R - 10 + Math.floor(i / 2) * 2, 0);
+  // clear the range field of trees
+  for (let y = R - 62; y <= R - 12; y++) for (let x = cx - 42; x <= cx - 12; x++) {
+    const t = g.world.treeAtTile(x, y);
+    if (t) g.world.removeTree(t.id);
+  }
   // driving range to the west, hitting north
   for (let i = 0; i < 8; i++) g.placeItem(i < 4 ? 'bay_covered' : 'bay_basic', cx - 30 + i, R - 14, 0);
   g.placeItem('dispenser', cx - 32, R - 13, 0);

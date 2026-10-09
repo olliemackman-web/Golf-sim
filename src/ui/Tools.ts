@@ -1,4 +1,5 @@
 // Build tools: placing items, painting surfaces, trees, holes, bulldozing, terraforming and buying land.
+import { listen } from '../core/listeners';
 import * as THREE from 'three';
 import { MAP, PARCEL, PARCELS, SURF_NAMES, Surf, TILE, YARDS_PER_WORLD, inMap, tileIndex } from '../core/constants';
 import { ITEMS, SURF_COST } from '../data/items';
@@ -60,15 +61,15 @@ export class Tools {
     this.holeLine.visible = false;
     this.holeLine.renderOrder = 10;
     view.r.scene.add(this.holeLine);
-    this.canvas.addEventListener('pointermove', (e) => this.onMove(e));
-    this.canvas.addEventListener('pointerdown', (e) => this.onDown(e));
-    window.addEventListener('pointerup', (e) => this.onUp(e));
-    this.canvas.addEventListener('pointerleave', () => {
+    listen(this.canvas, 'pointermove', (e) => this.onMove(e));
+    listen(this.canvas, 'pointerdown', (e) => this.onDown(e));
+    listen(window, 'pointerup', (e) => this.onUp(e));
+    listen(this.canvas, 'pointerleave', () => {
       this.tip.hidden = true;
       this.hover = null;
       this.clearHighlight();
     });
-    window.addEventListener('keydown', (e) => this.onKey(e));
+    listen(window, 'keydown', (e) => this.onKey(e));
   }
 
   setTool(kind: ToolKind, opts: { item?: string; surf?: Surf; tree?: string; editHole?: { id: number; which: 'tee' | 'pin' } } = {}): void {

@@ -27,9 +27,9 @@ export class TournamentRunner {
 
   constructor(private game: Game, public def: TournamentDef) {}
 
-  start(): void {
+  /** Ticket and sponsorship income for the event. */
+  private earnRevenue(): number {
     const g = this.game;
-    const sim = g.sim;
     const def = this.def;
     const tv = g.hasResearch('tv_broadcast') ? 1.75 : 1;
     const stands = g.world.objectsOfKind('grandstand').length;
@@ -39,17 +39,43 @@ export class TournamentRunner {
     g.earn('tournament', def.sponsorship * tv);
     g.earn('tournament', tickets);
     this.revenue = def.sponsorship * tv + tickets;
-    g.notify(`${def.name} begins! ${spectators.toLocaleString()} spectators have arrived.`, 'goal');
-    g.sound('applause');
+    return spectators;
+  }
 
+  private makeNames(): void {
+    const sim = this.game.sim;
     const used = new Set<string>();
-    for (let i = 0; i < def.field; i++) {
+    this.names = [];
+    for (let i = 0; i < this.def.field; i++) {
       let n = '';
       do n = `${sim.rng.pick(FIRST_NAMES)} ${sim.rng.pick(LAST_NAMES)}`;
       while (used.has(n));
       used.add(n);
       this.names.push(n);
     }
+  }
+
+  /** Resolve the whole event without visible play (used after loading a save). */
+  finishOffline(revenueAlreadyEarned: boolean): void {
+    if (!revenueAlreadyEarned) this.earnRevenue();
+    else this.revenue = this.def.sponsorship * (this.game.hasResearch('tv_broadcast') ? 1.75 : 1);
+    this.makeNames();
+    this.finish();
+  }
+
+  /** Begin the event. `resume` skips the income (already earned before a save/load). */
+  start(resume = false): void {
+    const g = this.game;
+    const sim = g.sim;
+    const def = this.def;
+    const sch = g.state.tournaments.scheduled;
+    if (!resume) {
+      const spectators = this.earnRevenue();
+      if (sch) sch.started = true;
+      g.notify(`${def.name} begins! ${spectators.toLocaleString()} spectators have arrived.`, 'goal');
+      g.sound('applause');
+    } else this.revenue = def.sponsorship * (g.hasResearch('tv_broadcast') ? 1.75 : 1);
+    this.makeNames();
 
     // visible pro groups
     const holes = g.course.validHoles().slice(0, 18).map((h) => h.save.id);
@@ -78,7 +104,7 @@ export class TournamentRunner {
     }
 
     // spectators
-    const nSpec = Math.min(110, 24 + Math.round(spectators / 40));
+    const nSpec = Math.min(110, 30 + Math.round(def.spectators / 60));
     const spots = this.spectatorSpots(nSpec);
     for (const s of spots) {
       const p = sim.addPerson(randomColors(sim.rng), s.x, s.z);

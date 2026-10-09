@@ -1,4 +1,5 @@
 // RTS-style orbit camera: pan (WASD / drag), rotate (Q/E / right-drag), zoom (wheel / pinch).
+import { listen } from '../core/listeners';
 import * as THREE from 'three';
 import { WORLD } from '../core/constants';
 import type { World } from '../world/World';
@@ -23,18 +24,18 @@ export class CameraController {
   leftPans = true;
 
   constructor(public camera: THREE.PerspectiveCamera, private dom: HTMLElement, private world: World) {
-    dom.addEventListener('contextmenu', (e) => e.preventDefault());
-    dom.addEventListener('pointerdown', (e) => this.onDown(e));
-    window.addEventListener('pointermove', (e) => this.onMove(e));
-    window.addEventListener('pointerup', (e) => this.onUp(e));
-    window.addEventListener('pointercancel', (e) => this.onUp(e));
-    dom.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-    window.addEventListener('keydown', (e) => {
+    listen(dom, 'contextmenu', (e) => e.preventDefault());
+    listen(dom, 'pointerdown', (e) => this.onDown(e));
+    listen(window, 'pointermove', (e) => this.onMove(e));
+    listen(window, 'pointerup', (e) => this.onUp(e));
+    listen(window, 'pointercancel', (e) => this.onUp(e));
+    listen(dom, 'wheel', (e) => this.onWheel(e), { passive: false });
+    listen(window, 'keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       this.keys.add(e.key.toLowerCase());
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
-    window.addEventListener('blur', () => this.keys.clear());
+    listen(window, 'keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+    listen(window, 'blur', () => this.keys.clear());
     this.goal.yaw = this.yaw;
     this.goal.pitch = this.pitch;
   }

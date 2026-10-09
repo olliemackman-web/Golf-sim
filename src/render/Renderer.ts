@@ -1,4 +1,5 @@
 // Scene setup: renderer, sky, lighting, day/night, post-processing.
+import { listen } from '../core/listeners';
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -6,7 +7,6 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
-import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { WORLD } from '../core/constants';
 import { setNight, shared } from './Materials';
 import { terrainUniforms } from './TerrainRenderer';
@@ -32,7 +32,6 @@ export class Renderer {
   sky: Sky;
   composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
-  private gtao: GTAOPass | null = null;
   quality: Quality;
   private pmrem: THREE.PMREMGenerator;
   private envScene = new THREE.Scene();
@@ -113,7 +112,7 @@ export class Renderer {
     this.scene.fog = new THREE.Fog(0xcfe0ee, 500, 2600);
 
     this.setupPost();
-    window.addEventListener('resize', () => this.resize());
+    listen(window, 'resize', () => this.resize());
   }
 
   private setupPost(): void {
@@ -126,12 +125,6 @@ export class Renderer {
     const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0 });
     const comp = new EffectComposer(r, rt);
     comp.addPass(new RenderPass(this.scene, this.camera));
-    if (this.quality === 'high') {
-      this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y);
-      this.gtao.blendIntensity = 0.75;
-      (this.gtao as unknown as { updateGtaoMaterial: (p: Record<string, number>) => void }).updateGtaoMaterial({ radius: 2.5, distanceExponent: 1.5, thickness: 2, scale: 1, samples: 12 });
-      comp.addPass(this.gtao);
-    }
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.15, 0.4, 1.1);
     comp.addPass(this.bloom);
     comp.addPass(new OutputPass());
@@ -148,7 +141,6 @@ export class Renderer {
     this.sun.shadow.map?.dispose();
     this.sun.shadow.map = null;
     this.composer?.dispose();
-    this.gtao = null;
     this.bloom = null;
     this.setupPost();
     this.resize();
@@ -162,7 +154,6 @@ export class Renderer {
     if (this.composer) {
       const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
       this.composer.setSize(w, h);
-      this.gtao?.setSize(size.x, size.y);
     }
   }
 

@@ -300,6 +300,13 @@ export class Sim {
   }
 
   disbandGroup(g: Group): void {
+    const co = g.co;
+    g.co = null;
+    try {
+      co?.return(undefined);
+    } catch {
+      /* the coroutine may be mid-step when it errored */
+    }
     g.removed = true;
     for (const m of g.members) this.removePerson(m);
     if (g.car) this.removeVehicle(g.car);

@@ -1,4 +1,5 @@
 // Management windows: finances, visitors, staff, research, marketing, prices, holes, tournaments, golfer, menu.
+import { listen } from '../core/listeners';
 import type { AppApi } from '../app';
 import { EQUIPMENT, MAX_STAT, PLAYER_STAT_NAMES, PlayerStat, xpForLevel } from '../data/clubs';
 import { MARKETING, TOURNAMENTS, TOURNAMENT_BY_ID } from '../data/events';
@@ -491,7 +492,7 @@ const PANELS: Record<PanelId, PanelDef> = {
       const s = app.settings;
       const vol = (k: 'master' | 'sfx' | 'ambience' | 'music', n: string) => `<div class="field"><label class="label" for="set-${k}">${n}</label><input type="range" id="set-${k}" min="0" max="1" step="0.05" value="${s[k]}" data-set="${k}"></div>`;
       return `<div class="field"><span class="label">Graphics quality</span><div class="seg">${(['low', 'medium', 'high'] as const).map((q) => `<button class="${s.quality === q ? 'on' : ''}" data-act="quality" data-arg="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
-        <span class="muted" style="font-size:11.5px">High adds ambient occlusion and anti-aliasing. Use Low on older laptops.</span></div>
+        <span class="muted" style="font-size:11.5px">High adds multisample anti-aliasing and sharper shadows. Use Low on older laptops.</span></div>
         ${vol('master', 'Master volume')}${vol('sfx', 'Sound effects')}${vol('ambience', 'Ambience')}${vol('music', 'Music')}
         <div class="flex" style="margin-top:6px"><button class="btn small" data-act="toggle" data-arg="musicOn">${s.musicOn ? 'Music on' : 'Music off'}</button><button class="btn small" data-act="toggle" data-arg="autosave">${s.autosave ? 'Autosave on' : 'Autosave off'}</button></div>`;
     },
@@ -573,7 +574,7 @@ export function openPanel(app: AppApi, ui: UI, id: PanelId, data?: unknown): { i
       close();
     }
   };
-  window.addEventListener('keydown', onKey, true);
+  listen(window, 'keydown', onKey, true);
   back.addEventListener('pointerdown', (e) => {
     if (e.target === back) close();
   });

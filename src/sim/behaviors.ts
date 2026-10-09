@@ -400,7 +400,8 @@ function* playRound(sim: Sim, g: Group): Co {
       const be = sim.entrancePoint(barn);
       const price = game.cartPrice();
       yield* all(players.map((m, i) => walkTo(sim, m, be.x + (i - 1.5) * 1.2, be.z)));
-      for (let i = 0; i < players.length; i += 2) {
+      // one cart per golfer: shared carts would need both players to agree on where to drive
+      for (let i = 0; i < players.length; i++) {
         const m = players[i];
         if (game.priceCheck(m, price, game.fairCartPrice()) === 'refuse') {
           m.think('cartprice', 'Cart hire is too expensive', -4);
@@ -408,12 +409,11 @@ function* playRound(sim: Sim, g: Group): Co {
         }
         game.earn('carts', price, { x: be.x, z: be.z });
         m.cash -= price;
-        const cart = sim.addVehicle('golf_cart', be.x + i, be.z + 1, 0);
+        const cart = sim.addVehicle('golf_cart', be.x + i * 1.6, be.z + 1, 0);
         cart.color = 0xf4f4ee;
         if (game.hasResearch('gps_carts')) cart.speed *= 1.15;
         g.carts.push(cart);
         carts.set(m.id, cart);
-        if (players[i + 1]) carts.set(players[i + 1].id, cart);
       }
     }
   }
@@ -576,12 +576,20 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
     yield* until(() => busy.size === 0, 15);
 
     // play out the hole
-    let guard = 0;
     const releaseAt = hole.length * 0.55;
     for (;;) {
-      if (++guard > 4000) break;
       const live = players.filter((m) => !m.removed && !(g.balls.get(m.id)?.holed));
       if (!live.length) break;
+      // safety valve: a group stuck on a hole for 15 sim-minutes picks up and moves on
+      if (sim.time - tStart > 900) {
+        for (const m of live) {
+          const b = g.balls.get(m.id)!;
+          b.holed = true;
+          b.pickedUp = true;
+          b.strokes = Math.max(b.strokes, hole.par + 2);
+        }
+        break;
+      }
       // let the next group tee off once everyone has moved well clear of the tee
       if (hole.occupiedBy === g.id && busy.size === 0) {
         const clear = live.every((m) => {
@@ -646,15 +654,15 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
       const be = sim.balls.find((b) => b.id === gb.ballId);
       if (be) be.removed = true;
       const toPar = strokes - hole.par;
-      if (strokes === 1) {
+      if (strokes === 1 && !gb.pickedUp) {
         m.think('ace', `HOLE IN ONE on hole ${hole.num}!!!`, 25);
         game.events.emit('notify', { text: `${m.name} made a hole-in-one on hole ${hole.num}!`, kind: 'good', x: hole.pinWorld.x, z: hole.pinWorld.z });
         game.events.emit('cheer', { x: hole.pinWorld.x, z: hole.pinWorld.z, big: true });
         game.reputationBoost(0.6);
-      } else if (toPar <= -2) {
+      } else if (toPar <= -2 && !gb.pickedUp) {
         m.think('eagle', `Eagle on hole ${hole.num}!`, 12);
         game.events.emit('cheer', { x: hole.pinWorld.x, z: hole.pinWorld.z, big: false });
-      } else if (toPar === -1) {
+      } else if (toPar === -1 && !gb.pickedUp) {
         m.think('birdie', `Birdie on ${hole.num}!`, 6);
         game.events.emit('cheer', { x: hole.pinWorld.x, z: hole.pinWorld.z, big: false });
       }

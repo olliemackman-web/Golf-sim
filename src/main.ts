@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { AppApi, PlayConfig, Settings } from './app';
 import { audio, SfxName } from './audio/Audio';
 import { Surf, TILE } from './core/constants';
+import { resetListeners } from './core/listeners';
 import { CLUB_NAME_IDEAS } from './data/visitors';
 import { buildDemo } from './demo';
 import { PlayMode } from './play/PlayMode';
@@ -34,6 +35,8 @@ class App implements AppApi {
   private paintSfxT = 0;
 
   constructor() {
+    const q = qs.get('q');
+    if (q === 'low' || q === 'medium' || q === 'high') this.settings.quality = q;
     this.applyAudioSettings();
     window.addEventListener('beforeunload', () => {
       if (!this.demo && this.game && this.settings.autosave) saveGame(this.game, 'slot1');
@@ -77,6 +80,7 @@ class App implements AppApi {
     this.play = null;
     this.ui?.root.remove();
     this.ui = null;
+    resetListeners();
     const r = this.view.r.renderer;
     container.innerHTML = '';
     r.dispose();

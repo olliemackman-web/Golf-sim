@@ -564,6 +564,7 @@ export class PlayMode {
     }
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     e.stopPropagation();
+    if (this.paused) return;
     this.keys.add(k);
     if (k === ' ' || k === 'enter') {
       e.preventDefault();
@@ -602,7 +603,7 @@ export class PlayMode {
   }
 
   private click(): void {
-    if (this.ended) return;
+    if (this.ended || this.paused) return;
     switch (this.phase) {
       case 'aim':
         this.phase = 'power';
@@ -643,8 +644,20 @@ export class PlayMode {
     this.renderHud();
   }
 
+  private paused = false;
+  private pauseEl: HTMLDivElement | null = null;
+
   private pauseMenu(): void {
+    if (this.paused) {
+      // Escape again resumes
+      this.pauseEl?.remove();
+      this.pauseEl = null;
+      this.paused = false;
+      return;
+    }
+    this.paused = true;
     const back = el('div', 'modal-back');
+    this.pauseEl = back;
     const course = this.cfg.mode === 'course';
     back.innerHTML = `<div class="window narrow"><div class="whead"><div class="wic">${icon('golfer')}</div><h2>Paused</h2></div><div class="wbody" style="display:grid;gap:8px">
       <button class="btn primary" data-act="resume">Keep playing</button>
@@ -652,6 +665,8 @@ export class PlayMode {
     this.hud.appendChild(back);
     delegate(back, (act) => {
       back.remove();
+      this.pauseEl = null;
+      this.paused = false;
       if (act === 'quit') this.exit();
     });
   }
@@ -981,6 +996,10 @@ export class PlayMode {
     if (this.ended) return;
     const g = this.app.game;
     const v = this.app.view;
+    if (this.paused) {
+      this.updateCamera(dt);
+      return;
+    }
     // aim keys
     if (this.phase === 'aim') {
       const rate = this.club.putter ? 0.35 : 0.8;

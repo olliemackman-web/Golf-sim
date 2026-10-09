@@ -104,6 +104,8 @@ export class Game {
     this.course.update();
     for (const s of state.staff) this.spawnStaff(s);
     this.prestigeCache = this.prestige();
+    this.lastHour = Math.floor(state.minute / 60);
+    this.checkTournament();
     world.on('objectAdded', () => this.events.emit('changed', undefined));
     world.on('objectRemoved', () => this.events.emit('changed', undefined));
   }
@@ -120,6 +122,8 @@ export class Game {
   static load(state: GameState): Game {
     const world = World.load(state.world!);
     const g = new Game(state, world);
+    const rf = state.rangeField ?? [];
+    for (let i = 0; i + 1 < rf.length; i += 2) g.sim.addFieldBall(rf[i] / 10, rf[i + 1] / 10);
     return g;
   }
 
@@ -190,7 +194,9 @@ export class Game {
     return h < 23 && this.world.objectsOfKind('floodlight').length > 0;
   }
   courseClosed(): boolean {
-    if (this.tournament && !this.tournament.isPro) return true;
+    if (this.tournament) return true;
+    const sch = this.state.tournaments.scheduled;
+    if (sch && sch.day === this.state.day) return true;
     const h = this.hour;
     const close = this.hasResearch('night_golf') ? 23 : CLOSE_HOUR + 0.5;
     return h >= close || h < OPEN_HOUR - 1;
@@ -302,9 +308,7 @@ export class Game {
       this.state.flags.welcomed = 1;
     }
     if (h === OPEN_HOUR) this.notify(`${this.dayName()} morning — the club is open. ${this.weatherLabel()}.`, 'info');
-    if (h === 8 && this.state.tournaments.scheduled && this.state.tournaments.scheduled.day === this.state.day && !this.tournament) {
-      this.startTournament();
-    }
+    this.checkTournament();
   }
 
   // ---------------------------------------------------------------- arrivals
@@ -348,7 +352,7 @@ export class Game {
   }
 
   priceFactor(price: number, fair: number): number {
-    return Math.max(0.2, Math.min(1.25, 1.4 - 0.7 * (price / Math.max(1, fair))));
+    return Math.max(0.2, Math.min(1.3, 1.7 - 0.7 * (price / Math.max(1, fair))));
   }
 
   /** Expected parties per game hour for each stream. */
@@ -680,6 +684,7 @@ export class Game {
     st.day++;
     st.stats.today = emptyDay(st.day);
     this.sim.thoughts.clear();
+    if (this.lostBallsToday >= 60) this.notify(`${this.lostBallsToday} range balls were lost today — they flew off your land or into water. Face bays towards open land you own.`, 'bad');
     this.happyLeftToday = 0;
     this.roundsToday = 0;
     this.lostBallsToday = 0;
@@ -831,7 +836,13 @@ export class Game {
       const refund = Math.round(def.cost * 0.4);
       const c = w.objectCenter(o);
       w.removeObject(o.id);
-      if (refund) this.earn('other', refund, c);
+      if (refund) {
+        // a refund reduces today's construction spending rather than counting as income
+        this.state.money += refund;
+        const td = this.state.stats.today;
+        td.expense.construction = (td.expense.construction ?? 0) - refund;
+        this.events.emit('money', { amount: refund, x: c.x, z: c.z });
+      }
       this.sound('bulldoze');
       this.course.markDirty();
       this.prestigeCache = this.prestige();
@@ -1132,16 +1143,30 @@ export class Game {
     return { ok: true, cost: def.purse };
   }
 
-  private startTournament(): void {
+  /** Start, resume or resolve the scheduled tournament depending on the clock. Safe to call any time. */
+  checkTournament(): void {
     const sch = this.state.tournaments.scheduled;
-    if (!sch) return;
+    if (!sch || this.tournament) return;
     const def = TOURNAMENT_BY_ID[sch.id];
-    this.tournament = new TournamentRunner(this, def);
-    this.tournament.start();
+    if (!def) {
+      this.state.tournaments.scheduled = null;
+      return;
+    }
+    const h = this.hour;
+    if (sch.day < this.state.day || (sch.day === this.state.day && h >= 20)) {
+      // the day has passed (e.g. loaded from a save): settle the event without visible play
+      new TournamentRunner(this, def).finishOffline(!!sch.started);
+      return;
+    }
+    if (sch.day === this.state.day && h >= 8) {
+      this.tournament = new TournamentRunner(this, def);
+      this.tournament.start(!!sch.started);
+    }
   }
 
   endTournament(results: { name: string; score: number; toPar: number; you?: boolean }[], revenue: number, repGain: number): void {
     const sch = this.state.tournaments.scheduled;
+    this.tournament = null;
     if (!sch) return;
     const def = TOURNAMENT_BY_ID[sch.id];
     const you = results.findIndex((r) => r.you);
@@ -1211,6 +1236,10 @@ export class Game {
 
   serialize(): GameState {
     this.state.holes = this.course.saves();
+    const f = this.sim.field;
+    const field: number[] = [];
+    for (let i = 0; i < f.n; i++) field.push(Math.round(f.x[i] * 10), Math.round(f.z[i] * 10));
+    this.state.rangeField = field;
     const s: GameState = JSON.parse(JSON.stringify({ ...this.state, world: null }));
     s.world = this.world.serialize();
     return s;

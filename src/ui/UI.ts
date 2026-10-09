@@ -1,4 +1,5 @@
 // Main in-game interface: top bar, goals, build dock, palettes, inspector, toasts and windows.
+import { listen } from '../core/listeners';
 import { PARCEL, PARCELS, SURF_NAMES, Surf, TILE } from '../core/constants';
 import type { AppApi } from '../app';
 import { CHAPTERS } from '../data/goals';
@@ -139,7 +140,7 @@ export class UI implements ToolHost {
     });
     game.events.on('tournamentEnd', (t) => openPanel(this.app, this, 'tournamentResult', t));
 
-    window.addEventListener('keydown', (e) => this.onKey(e));
+    listen(window, 'keydown', (e) => this.onKey(e));
     this.refresh(true);
   }
 

@@ -97,7 +97,7 @@ export interface GameState {
   chapter: number;
   goalsDone: string[];
   marketing: { id: string; daysLeft: number }[];
-  tournaments: { scheduled: { id: string; day: number; playerEntered: boolean } | null; history: TournamentRecord[] };
+  tournaments: { scheduled: { id: string; day: number; playerEntered: boolean; started?: boolean } | null; history: TournamentRecord[] };
   weather: { kind: WeatherKind; wind: number; windDir: number; tomorrow: WeatherKind };
   stats: {
     totalVisitors: number;
@@ -111,6 +111,8 @@ export interface GameState {
   victory: boolean;
   sandbox: boolean;
   world: WorldSave | null;
+  /** Range balls lying on the field (x,z pairs in decimetres). */
+  rangeField?: number[];
 }
 
 export function emptyDay(day: number): DayRecord {
