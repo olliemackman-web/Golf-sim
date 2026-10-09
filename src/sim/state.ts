@@ -29,7 +29,7 @@ export interface Prices {
 }
 
 export const DEFAULT_PRICES: Prices = {
-  bucket: 9, green9: 24, cart: 15, lesson: 45, membership: 220, food: 1, shop: 1, hotel: 180,
+  bucket: 12, green9: 28, cart: 15, lesson: 45, membership: 220, food: 1, shop: 1, hotel: 180,
 };
 
 export interface StaffSave {

@@ -36,7 +36,7 @@ export const CHAPTERS: ChapterDef[] = [
     num: 1,
     title: 'Breaking Ground',
     intro: 'You have bought a patch of farmland by the main road. Every great club starts somewhere — build a driving range to get money coming in.',
-    reward: 6000,
+    reward: 10000,
     goals: [
       { id: 'c1_bays', name: 'Build 4 driving range bays', check: (g) => count(g.world.objectsOfKind('bay').length, 4) },
       { id: 'c1_dispenser', name: 'Build a ball dispenser', check: (g) => bool(g.world.objectsOfKind('dispenser').length > 0) },
@@ -49,7 +49,7 @@ export const CHAPTERS: ChapterDef[] = [
     num: 2,
     title: 'Pitch & Putt',
     intro: 'Range regulars keep asking where they can play a real hole. Build a clubhouse and lay out your first holes. Paint a tee box, a fairway and a green, then use the Hole tool to place the tee and pin.',
-    reward: 15000,
+    reward: 25000,
     goals: [
       { id: 'c2_clubhouse', name: 'Build a clubhouse', check: (g) => bool(g.world.objectsOfKind('clubhouse').length > 0) },
       { id: 'c2_holes', name: 'Open 3 playable holes', check: (g) => count(g.course.validHoles().length, 3) },
@@ -63,7 +63,7 @@ export const CHAPTERS: ChapterDef[] = [
     num: 3,
     title: 'The Front Nine',
     intro: 'Word is spreading. Golfers want a proper nine-hole loop with somewhere to shop and somewhere to eat.',
-    reward: 40000,
+    reward: 60000,
     goals: [
       { id: 'c3_holes', name: 'Open 9 playable holes', check: (g) => count(g.course.validHoles().length, 9) },
       { id: 'c3_rating', name: 'Average hole rating of 50', check: (g) => count(Math.round(g.course.averageRating()), 50) },
@@ -77,7 +77,7 @@ export const CHAPTERS: ChapterDef[] = [
     num: 4,
     title: 'Country Club',
     intro: 'Time to become a real country club: a full eighteen, a thriving membership and a clubhouse to match.',
-    reward: 100000,
+    reward: 150000,
     goals: [
       { id: 'c4_holes', name: 'Open 18 playable holes', check: (g) => count(g.course.validHoles().length, 18) },
       { id: 'c4_rep', name: 'Reach a 3.5★ reputation', check: (g) => count(g.state.reputation, 70, stars) },
@@ -91,7 +91,7 @@ export const CHAPTERS: ChapterDef[] = [
     num: 5,
     title: 'Championship Venue',
     intro: 'The governing bodies have noticed. Prove your course can host the best players in the world.',
-    reward: 250000,
+    reward: 400000,
     goals: [
       { id: 'c5_regional', name: 'Host the Regional Open', check: (g) => bool(g.state.tournaments.history.some((t) => t.id === 'regional_open')) },
       { id: 'c5_rating', name: 'Average hole rating of 68', check: (g) => count(Math.round(g.course.averageRating()), 68) },

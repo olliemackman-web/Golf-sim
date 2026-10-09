@@ -222,6 +222,10 @@ const D: ItemDef[] = [
   {
     id: 'carpark', name: 'Car Park', cat: 'buildings', kind: 'carpark', place: 'roadside',
     desc: 'Ten parking spaces. Must touch the road. Visitors drive away if they cannot park.', cost: 5000, upkeep: 5, w: 6, h: 4, capacity: 10, chapter: 1,
+    upgrades: [
+      { name: 'Overflow Field', cost: 7000, upkeep: 10, desc: 'Marshalled overflow parking on the field behind. Doubles the spaces to 20.', chapter: 2 },
+      { name: 'Valet Parking', cost: 18000, upkeep: 30, desc: 'Valets park cars off-site. Thirty spaces in total.', chapter: 3 },
+    ],
   },
   {
     id: 'grandstand', name: 'Grandstand', cat: 'buildings', kind: 'grandstand',

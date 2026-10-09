@@ -66,6 +66,7 @@ export class TournamentRunner {
         p.vtype = 'pro';
         p.name = this.names[gi * 3 + k] ?? 'Pro';
         p.skill = Math.min(1, def.strength + sim.rng.gauss() * 0.04);
+        p.speed = 7.8;
         p.colors.hatType = 1;
         p.group = grp;
         p.visible = false;

@@ -4,7 +4,7 @@ import { TILE } from '../core/constants';
 import { ITEMS, itemModel } from '../data/items';
 import type { PlacedObject, Tree, World } from '../world/World';
 import { EVERGREEN, getMaterial } from './Materials';
-import { WINDMILL_ROTOR_POS, buildModel } from './Models';
+import { MODEL_KEYS, WINDMILL_ROTOR_POS, buildModel } from './Models';
 import type { ModelData } from './modelTypes';
 
 const tmpM = new THREE.Matrix4();
@@ -138,7 +138,11 @@ export class InstancedModel {
 export function modelKeyFor(o: PlacedObject): string {
   const def = ITEMS[o.type];
   const base = itemModel(def);
-  if (o.level > 1 && def.upgrades) return `${base}_${o.level}`;
+  if (o.level > 1 && def.upgrades) {
+    const k = `${base}_${o.level}`;
+    if (MODEL_KEYS.includes(k)) return k;
+    if (o.level > 2 && MODEL_KEYS.includes(`${base}_2`)) return `${base}_2`;
+  }
   return base;
 }
 

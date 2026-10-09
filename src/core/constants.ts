@@ -30,7 +30,7 @@ export const CLOSE_HOUR = 21;
 export const LAST_ROUND_HOUR = 17;
 
 /** Game minutes that pass per real second at 1x speed. */
-export const GAME_MIN_PER_SEC = 0.8;
+export const GAME_MIN_PER_SEC = 0.55;
 
 export const DAYS_PER_SEASON = 10;
 export const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'] as const;

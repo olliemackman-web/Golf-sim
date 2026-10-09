@@ -43,6 +43,9 @@ export interface HoleInfo {
   queue: number[];
   roundsPlayed: number;
   totalStrokes: number;
+  /** Runtime: total sim seconds groups spent playing this hole, and group count. */
+  playTime: number;
+  groupsTimed: number;
 }
 
 export function parFor(yds: number): number {
@@ -79,7 +82,7 @@ export class Course {
       design: 0, difficulty: 0, beauty: 0, condition: 0, rating: 0, corridor: [], greenTiles: [],
       teeWorld: { x: (save.tee.x + 0.5) * TILE, z: (save.tee.y + 0.5) * TILE },
       pinWorld: { x: (save.pin.x + 0.5) * TILE, z: (save.pin.y + 0.5) * TILE },
-      occupiedBy: 0, queue: [], roundsPlayed: 0, totalStrokes: 0,
+      occupiedBy: 0, queue: [], roundsPlayed: 0, totalStrokes: 0, playTime: 0, groupsTimed: 0,
     };
   }
 

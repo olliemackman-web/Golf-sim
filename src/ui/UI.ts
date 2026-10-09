@@ -423,7 +423,7 @@ export class UI implements ToolHost {
       }
       if (def.kind === 'carpark') {
         const s = g.sim.slotsFor(o);
-        rows.push(['Spaces used', `${s.filter((v) => v).length} / ${CARPARK_SLOTS.length}`]);
+        rows.push(['Spaces used', `${s.filter((v) => v).length} / ${CARPARK_SLOTS.length * o.level}`]);
       }
       if (def.capacity && def.enterable) rows.push(['Inside', `${g.sim.occupancy.get(o.id) ?? 0} / ${(def.capacity ?? 0) * (o.level || 1)}`]);
       if (def.spend) rows.push(['Typical spend', money(def.spend * g.state.prices.food * (o.level > 1 ? 1.25 : 1), true)]);

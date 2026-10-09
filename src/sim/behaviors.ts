@@ -5,9 +5,10 @@ import { FIRST_NAMES, LAST_NAMES, VISITOR_TYPES, VisitorTypeId } from '../data/v
 import type { HoleInfo } from '../world/Course';
 import type { PlacedObject } from '../world/World';
 import { Co, GolfBall, Group, Person, randomColors } from './agents';
+import { CARPARK_SLOTS } from '../data/layout';
 import { all, until, wait } from './co';
 import { planShot, simulateShot } from './golfAI';
-import { Sim, carColor } from './Sim';
+import { GOLF_WALK, Sim, carColor } from './Sim';
 
 // ---------------------------------------------------------------- movement helpers
 export function* walkTo(sim: Sim, p: Person, x: number, z: number, exact = true): Generator<void, boolean, number> {
@@ -176,6 +177,8 @@ function* arrive(sim: Sim, g: Group): Co {
       }
       car.x = route[route.length - 1].x;
       car.z = route[route.length - 1].z;
+      // overflow spaces of an upgraded car park are off-screen
+      if (g.carSlot >= CARPARK_SLOTS.length) car.visible = false;
       game.events.emit('sound', { name: 'car_door', x: car.x, z: car.z });
       g.members.forEach((m, i) => {
         m.x = car.x + (i % 2 ? 1.6 : -1.6);
@@ -229,6 +232,7 @@ function* leave(sim: Sim, g: Group): Co {
     if (cp && g.carSlot >= 0) {
       const route = sim.carRouteOut(cp, g.carSlot, sim.rng.chance(0.5));
       sim.releaseSlot(g);
+      car.visible = true;
       car.path = route;
       car.pathI = 0;
       car.moving = true;
@@ -430,6 +434,7 @@ function* playRound(sim: Sim, g: Group): Co {
   for (const m of players) {
     g.scores.set(m.id, []);
     m.holesPlayed = 0;
+    m.speed = GOLF_WALK * sim.rng.range(0.92, 1.08);
   }
   let holeCount = 0;
   for (const hid of g.plan.holes) {
@@ -461,9 +466,10 @@ function* playRound(sim: Sim, g: Group): Co {
       const total = sc.reduce((a, b) => a + b, 0);
       const par = g.plan.holes.slice(0, m.holesPlayed).reduce((a, id) => a + (game.course.byId(id)?.par ?? 4), 0);
       const diff = total - par;
-      const expected = 4 + (1 - m.skill) * 30 * (m.holesPlayed / 18);
-      if (diff < expected - 4) m.think('goodround', `Shot ${total} — my best round in ages!`, 8);
-      else if (diff > expected + 6) m.think('badround', `Shot ${total}. Never again...`, -4);
+      const frac = m.holesPlayed / 18;
+      const expected = (2 + (1 - m.skill) * 32) * frac;
+      if (diff < expected - Math.max(2, 6 * frac)) m.think('goodround', `Shot ${total} — my best round in ages!`, 8);
+      else if (diff > expected + Math.max(3, 8 * frac)) m.think('badround', `Shot ${total}. Never again...`, -4);
       else m.think('round', `Enjoyed my round (${total})`, 3);
     }
   }
@@ -545,6 +551,7 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
   hole.queue.shift();
   hole.occupiedBy = g.id;
   g.currentHole = hole.save.id;
+  const tStart = sim.time;
 
   try {
     // set up balls
@@ -570,10 +577,19 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
 
     // play out the hole
     let guard = 0;
+    const releaseAt = hole.length * 0.55;
     for (;;) {
-      if (++guard > 80) break;
+      if (++guard > 4000) break;
       const live = players.filter((m) => !m.removed && !(g.balls.get(m.id)?.holed));
       if (!live.length) break;
+      // let the next group tee off once everyone has moved well clear of the tee
+      if (hole.occupiedBy === g.id && busy.size === 0) {
+        const clear = live.every((m) => {
+          const gb = g.balls.get(m.id)!;
+          return game.world.surfAt(gb.x, gb.z) === Surf.Green || game.course.projectOnRoute(hole, gb) > releaseAt;
+        });
+        if (clear) hole.occupiedBy = 0;
+      }
       // everyone heads for their ball
       for (const m of live) {
         const gb = g.balls.get(m.id)!;
@@ -591,10 +607,15 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
           } else if (!sim.walkTo(m, ad.x, ad.z, 'walk')) sim.walkStraight(m, ad.x, ad.z);
         }
       }
-      // farthest from the pin plays
-      let pick = live[0];
+      // farthest from the pin among players whose ball has come to rest plays next
+      const ready = live.filter((m) => !busy.has(m.id));
+      if (!ready.length) {
+        yield;
+        continue;
+      }
+      let pick = ready[0];
       let pd = -1;
-      for (const m of live) {
+      for (const m of ready) {
         const gb = g.balls.get(m.id)!;
         const d = Math.hypot(gb.x - hole.pinWorld.x, gb.z - hole.pinWorld.z);
         if (d > pd) {
@@ -649,6 +670,8 @@ export function* playHole(sim: Sim, g: Group, hole: HoleInfo, players: Person[],
       m.happiness += (q - 50) * 0.05;
     }
     for (const m of players) m.happiness = Math.max(0, Math.min(100, m.happiness));
+    hole.playTime += sim.time - tStart;
+    hole.groupsTimed++;
   } finally {
     if (hole.occupiedBy === g.id) hole.occupiedBy = 0;
     for (const m of players) {
@@ -680,9 +703,9 @@ function* takeShot(sim: Sim, g: Group, m: Person, hole: HoleInfo, isTee: boolean
     be.z = gb.z;
     be.y = w.heightAt(gb.x, gb.z) + (isTee && plan.kind === 'full' ? 0.08 : 0.04);
   }
-  yield* wait(game.preShotTime() * sim.rng.range(0.6, 1.3));
+  yield* wait(game.preShotTime() * sim.rng.range(0.6, 1.3) * (plan.kind === 'putt' ? 0.6 : 1));
   const anim = plan.kind === 'putt' ? 'putt' : plan.kind === 'chip' ? 'chip' : 'swing';
-  const dur = plan.kind === 'putt' ? 1.0 : plan.kind === 'chip' ? 1.05 : plan.club.id === 'dr' ? 1.4 : 1.25;
+  const dur = plan.kind === 'putt' ? 0.8 : plan.kind === 'chip' ? 0.9 : plan.club.id === 'dr' ? 1.15 : 1.0;
   m.restartAnim(anim, dur);
   yield* wait(dur * 0.48);
   const res = simulateShot(w, plan, gb, m.skill, sim.rng, hole.pinWorld, game.greenSpeed());
@@ -771,8 +794,7 @@ function* takeShot(sim: Sim, g: Group, m: Person, hole: HoleInfo, isTee: boolean
   };
   // run the resolver in the background so the group keeps moving
   sim.attachVehicleCo(resolve() as Generator<void, void, number>);
-  if (isTee) yield* wait(0.3);
-  else yield* until(() => !busy.has(m.id), 14);
+  yield* wait(isTee ? 0.2 : plan.kind === 'putt' ? 0.15 : 0.35);
   void COURSE_SCALE;
 }
 

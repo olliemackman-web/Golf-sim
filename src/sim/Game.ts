@@ -51,8 +51,8 @@ export interface ActionResult {
 
 /** Tunable economy numbers. */
 export const BAL = {
-  rangeBase: 1.1,
-  rangePerBay: 0.55,
+  rangeBase: 1.6,
+  rangePerBay: 0.7,
   courseBase: 0.45,
   coursePerHole: 0.3,
   fairBucket: 12,
@@ -727,7 +727,7 @@ export class Game {
   }
   preShotTime(): number {
     const marshals = this.staffOfRole('marshal').length;
-    return 0.9 * (1 - Math.min(0.45, marshals * 0.12)) * (this.hasResearch('online_booking') ? 0.9 : 1);
+    return 0.4 * (1 - Math.min(0.45, marshals * 0.12)) * (this.hasResearch('online_booking') ? 0.9 : 1);
   }
   greenSpeed(): number {
     return this.hasResearch('championship_greens') ? 1.15 : 1;

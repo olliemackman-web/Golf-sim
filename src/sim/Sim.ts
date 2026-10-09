@@ -9,7 +9,8 @@ import { BallEntity, Colors, Group, Litter, Person, Vehicle, VehicleType, newEnt
 import type { Game } from './Game';
 
 const WALK_SPEED = 5.2;
-const CART_SPEED = 10;
+export const GOLF_WALK = 7.8;
+const CART_SPEED = 12.5;
 
 export interface FieldBalls {
   x: Float32Array;
@@ -176,7 +177,11 @@ export class Sim {
   }
 
   // ---------------------------------------------------------------- update
+  /** Total simulated seconds. */
+  time = 0;
+
   update(dt: number): void {
+    this.time += dt;
     const w = this.world;
     // through traffic on the road
     this.trafficT -= dt;
@@ -534,12 +539,15 @@ export class Sim {
   }
 
   // ---------------------------------------------------------------- car parks & cars
+  /** Slot occupancy for a car park. Upgraded car parks have extra overflow spaces (cars there are not drawn). */
   slotsFor(o: PlacedObject): number[] {
+    const n = CARPARK_SLOTS.length * Math.max(1, o.level);
     let s = this.slots.get(o.id);
     if (!s) {
-      s = new Array(CARPARK_SLOTS.length).fill(0);
+      s = new Array(n).fill(0);
       this.slots.set(o.id, s);
     }
+    while (s.length < n) s.push(0);
     return s;
   }
 
@@ -554,7 +562,8 @@ export class Sim {
         bestFree = free;
         // choose a random free slot for variety
         const freeIdx = s.map((v, i) => (v === 0 ? i : -1)).filter((i) => i >= 0);
-        best = { carpark: c, slot: this.rng.pick(freeIdx) };
+        const visible = freeIdx.filter((i) => i < CARPARK_SLOTS.length);
+        best = { carpark: c, slot: this.rng.pick(visible.length ? visible : freeIdx) };
       }
     }
     return best;
@@ -582,7 +591,7 @@ export class Sim {
   carRouteIn(cp: PlacedObject, slot: number, fromWest: boolean): { x: number; z: number }[] {
     const w = this.world;
     const c = w.objectCenter(cp);
-    const s = CARPARK_SLOTS[slot];
+    const s = CARPARK_SLOTS[slot % CARPARK_SLOTS.length];
     const lane = fromWest ? LANE_EAST_Z : LANE_WEST_Z;
     const startX = fromWest ? -40 : WORLD + 40;
     const entry = { x: c.x + CARPARK_ENTRY.x, z: c.z + CARPARK_ENTRY.z };
@@ -599,7 +608,7 @@ export class Sim {
   carRouteOut(cp: PlacedObject, slot: number, toWest: boolean): { x: number; z: number }[] {
     const w = this.world;
     const c = w.objectCenter(cp);
-    const s = CARPARK_SLOTS[slot];
+    const s = CARPARK_SLOTS[slot % CARPARK_SLOTS.length];
     const entry = { x: c.x + CARPARK_ENTRY.x, z: c.z + CARPARK_ENTRY.z };
     const lane = toWest ? LANE_WEST_Z : LANE_EAST_Z;
     return [
