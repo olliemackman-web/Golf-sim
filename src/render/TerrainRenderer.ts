@@ -18,6 +18,10 @@ export const terrainUniforms = {
   uSeason: { value: new THREE.Vector4(1, 1, 1, 0) },
   uWet: { value: 0 },
   uSnow: { value: 0 },
+  /** Ground light pools at night: xyz = world x, z, radius; w = intensity. */
+  uLights: { value: Array.from({ length: 48 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uLightCount: { value: 0 },
+  uNightLight: { value: 0 },
 };
 
 const GLSL_NOISE = /* glsl */ `
@@ -105,6 +109,7 @@ uniform sampler2D uSplatA; uniform sampler2D uSplatB; uniform sampler2D uInfo;
 uniform float uWorld; uniform float uGrid; uniform vec4 uHighlight; uniform vec3 uHighlightColor;
 uniform float uOverlay; uniform float uOwnership; uniform float uCloud; uniform float uTime;
 uniform vec4 uSeason; uniform float uWet; uniform float uSnow;
+uniform vec4 uLights[48]; uniform int uLightCount; uniform float uNightLight;
 float gRough;
 ${GLSL_NOISE}
 float sharp(float w, float n){ float e = max(0.035, fwidth(w) * 1.2); return smoothstep(0.5 - e, 0.5 + e, w + n); }
@@ -255,6 +260,18 @@ float sharp(float w, float n){ float e = max(0.035, fwidth(w) * 1.2); return smo
     col = mix(col, uHighlightColor, inside * 0.28 + border * 0.6);
   }
   diffuseColor.rgb = col;
+}`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uNightLight > 0.01) {
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < 48; i++) {
+    if (i >= uLightCount) break;
+    vec4 L = uLights[i];
+    float d = length(vWPos.xz - L.xy) / L.z;
+    float f = clamp(1.0 - d, 0.0, 1.0);
+    glow += vec3(1.0, 0.72, 0.42) * f * f * L.w;
+  }
+  totalEmissiveRadiance += glow * diffuseColor.rgb * uNightLight * 1.6;
 }`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = gRough;`);

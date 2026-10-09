@@ -194,7 +194,7 @@ export class Renderer {
     } else {
       // moonlight from opposite side
       this.sun.color.set(0x8fa6d6);
-      this.sun.intensity = 0.28 * cloudDim;
+      this.sun.intensity = 0.4 * cloudDim;
       this.sun.position.copy(this.focus).add(new THREE.Vector3(0.3, 0.8, -0.4).normalize().multiplyScalar(600));
     }
     this.sun.target.position.copy(this.focus);

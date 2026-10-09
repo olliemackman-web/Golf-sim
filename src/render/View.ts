@@ -10,6 +10,7 @@ import { shared } from './Materials';
 import { ObjectRenderer } from './ObjectRenderer';
 import { Quality, Renderer } from './Renderer';
 import { Surroundings } from './Surroundings';
+import { LightPools } from './LightPools';
 import { TerrainRenderer, terrainUniforms } from './TerrainRenderer';
 import { WaterRenderer } from './WaterRenderer';
 
@@ -22,6 +23,8 @@ export class View {
   entities: EntityRenderer;
   effects: Effects;
   surroundings: Surroundings;
+  lightPools: LightPools;
+  private lightT = 0;
   cam: CameraController;
   private raycaster = new THREE.Raycaster();
   private time = 0;
@@ -52,6 +55,7 @@ export class View {
     this.effects = new Effects(container);
     s.add(this.effects.group);
     this.surroundings = new Surroundings(game.world);
+    this.lightPools = new LightPools(game.world);
     s.add(this.surroundings.group);
     this.cam = new CameraController(this.r.camera, this.r.renderer.domElement, game.world);
     this.cam.pickGround = (x, y) => this.pickGround(x, y);
@@ -189,6 +193,11 @@ export class View {
     this.r.updateEnvironment({ hour: g.hour, dayOfYear: g.state.day, cloud: this.cloud, rain: this.rain, season, wind: g.state.weather.wind }, dt);
 
     this.terrain.flush();
+    this.lightT -= dt;
+    if (this.lightT <= 0) {
+      this.lightT = 0.5;
+      this.lightPools.update(this.r.camera.position, Math.max(0, this.r.night - 0.15) / 0.85);
+    }
     this.condTimer -= dt;
     if (this.condTimer <= 0 && g.conditionDirty) {
       this.condTimer = 0.5;

@@ -10,8 +10,8 @@ export const waterUniforms = {
   uSunColor: { value: new THREE.Color(1, 0.95, 0.85) },
   uSky: { value: new THREE.Color(0.35, 0.55, 0.85) },
   uHorizon: { value: new THREE.Color(0.75, 0.82, 0.9) },
-  uDeep: { value: new THREE.Color(0x3a8796) },
-  uShallow: { value: new THREE.Color(0x86c7b3) },
+  uDeep: { value: new THREE.Color(0x24687e) },
+  uShallow: { value: new THREE.Color(0x5fa89a) },
   uNight: { value: 0 },
   uRain: { value: 0 },
 };
@@ -62,7 +62,7 @@ void main() {
   vec3 refl = mix(uHorizon, uSky, clamp(R.y * 1.6, 0.0, 1.0));
   float depth = clamp(vShore, 0.0, 1.0);
   vec3 base = mix(uShallow, uDeep, smoothstep(0.0, 1.0, depth));
-  vec3 col = mix(base, refl, clamp(0.28 + fres * 0.7, 0.0, 1.0));
+  vec3 col = mix(base, refl * 0.75, clamp(0.12 + fres * 0.8, 0.0, 1.0));
   col += vec3(0.02, 0.05, 0.06) * (h0 - 0.4);
   float spec = pow(max(dot(R, normalize(uSunDir)), 0.0), 220.0) * 3.0 + pow(max(dot(R, normalize(uSunDir)), 0.0), 30.0) * 0.18;
   col += uSunColor * spec * (1.0 - uNight * 0.85);
@@ -170,8 +170,25 @@ export class WaterRenderer {
         vmap.set(k, id);
         return id;
       };
+      const HN1 = HC + 1;
       for (const c of cells) {
         const cx = c % HC, cy = (c / HC) | 0;
+        // margin cells outside the water tiles are only kept where the bank is above the water,
+        // otherwise the surface would float over lower ground on slopes
+        const tx = Math.floor(cx / SUB), ty = Math.floor(cy / SUB);
+        if (w.surf[ty * MAP + tx] !== Surf.Water) {
+          let floating = false;
+          for (const [vx, vy] of [[cx, cy], [cx + 1, cy], [cx, cy + 1], [cx + 1, cy + 1]]) {
+            // only corners that touch no water tile can betray a floating surface
+            let touches = false;
+            for (const [ox, oy] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) {
+              const sx = Math.floor((vx + ox) / SUB), sy = Math.floor((vy + oy) / SUB);
+              if (inMap(sx, sy) && w.surf[sy * MAP + sx] === Surf.Water) touches = true;
+            }
+            if (!touches && w.final[vy * HN1 + vx] < body.level - 0.02) floating = true;
+          }
+          if (floating) continue;
+        }
         const a = vert(cx, cy), b = vert(cx + 1, cy), cc = vert(cx, cy + 1), d = vert(cx + 1, cy + 1);
         idx.push(a, cc, d, a, d, b);
       }
