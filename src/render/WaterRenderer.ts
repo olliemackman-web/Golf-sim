@@ -10,8 +10,8 @@ export const waterUniforms = {
   uSunColor: { value: new THREE.Color(1, 0.95, 0.85) },
   uSky: { value: new THREE.Color(0.35, 0.55, 0.85) },
   uHorizon: { value: new THREE.Color(0.75, 0.82, 0.9) },
-  uDeep: { value: new THREE.Color(0x1d5d6e) },
-  uShallow: { value: new THREE.Color(0x5aa89a) },
+  uDeep: { value: new THREE.Color(0x3a8796) },
+  uShallow: { value: new THREE.Color(0x86c7b3) },
   uNight: { value: 0 },
   uRain: { value: 0 },
 };
@@ -62,7 +62,7 @@ void main() {
   vec3 refl = mix(uHorizon, uSky, clamp(R.y * 1.6, 0.0, 1.0));
   float depth = clamp(vShore, 0.0, 1.0);
   vec3 base = mix(uShallow, uDeep, smoothstep(0.0, 1.0, depth));
-  vec3 col = mix(base, refl, clamp(0.12 + fres * 0.85, 0.0, 1.0));
+  vec3 col = mix(base, refl, clamp(0.28 + fres * 0.7, 0.0, 1.0));
   col += vec3(0.02, 0.05, 0.06) * (h0 - 0.4);
   float spec = pow(max(dot(R, normalize(uSunDir)), 0.0), 220.0) * 3.0 + pow(max(dot(R, normalize(uSunDir)), 0.0), 30.0) * 0.18;
   col += uSunColor * spec * (1.0 - uNight * 0.85);
@@ -70,7 +70,7 @@ void main() {
   float foam = (1.0 - smoothstep(0.0, 0.22, depth)) * smoothstep(0.45, 0.75, vn(p * 1.5 + uTime * 0.3) + 0.3 * sin(uTime * 1.5 + depth * 20.0));
   col = mix(col, vec3(0.9, 0.95, 0.95), foam * 0.45);
   col *= 1.0 - uNight * 0.75;
-  float alpha = mix(0.55, 0.92, smoothstep(0.0, 0.6, depth)) + fres * 0.1;
+  float alpha = mix(0.62, 0.96, smoothstep(0.0, 0.5, depth)) + fres * 0.1;
   gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

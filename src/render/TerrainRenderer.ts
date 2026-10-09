@@ -187,7 +187,7 @@ float sharp(float w, float n){ float e = max(0.035, fwidth(w) * 1.2); return smo
 
   // water bed
   float wW = sharp(B.b, 0.0);
-  col = mix(col, s2l(vec3(0.27, 0.32, 0.2)) * (0.8 + 0.3 * n1), wW);
+  col = mix(col, s2l(vec3(0.42, 0.45, 0.3)) * (0.85 + 0.3 * n1), wW);
 
   // cart path (asphalt with darker edges)
   float wP = sharp(B.r, edgeN * 0.3);

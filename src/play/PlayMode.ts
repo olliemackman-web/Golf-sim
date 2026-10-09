@@ -80,7 +80,16 @@ export class PlayMode {
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.key.toLowerCase());
   private onPointerDown = (e: PointerEvent) => this.pointerDown(e);
   private onPointerMove = (e: PointerEvent) => this.pointerMove(e);
-  private onPointerUp = () => (this.drag = null);
+  private onPointerUp = (e: PointerEvent) => {
+    // touch: a tap (not a drag) starts the swing
+    if (this.touchStart && e.pointerType === 'touch') {
+      const moved = Math.abs(e.clientX - this.touchStart.x) > 10;
+      this.touchStart = null;
+      if (!moved && this.phase === 'aim') this.click();
+    }
+    this.drag = null;
+  };
+  private touchStart: { x: number } | null = null;
   private onWheel = (e: WheelEvent) => {
     e.preventDefault();
     this.changeClub(e.deltaY > 0 ? 1 : -1);
@@ -568,6 +577,13 @@ export class PlayMode {
   }
 
   private pointerDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      if (this.phase === 'aim') {
+        this.touchStart = { x: e.clientX };
+        this.drag = { x: e.clientX };
+      } else this.click();
+      return;
+    }
     if (e.button === 2) {
       this.drag = { x: e.clientX };
       return;
@@ -618,6 +634,12 @@ export class PlayMode {
     else if (act === 'cam') this.camMode = this.camMode === 'behind' ? 'overhead' : 'behind';
     else if (act === 'clubup') this.changeClub(-1);
     else if (act === 'clubdown') this.changeClub(1);
+    else if (act === 'aiml' || act === 'aimr') {
+      if (this.phase !== 'aim') return;
+      this.aimYaw += (act === 'aiml' ? 1 : -1) * (this.club.putter ? 0.01 : 0.025);
+      this.placePlayer();
+      this.updateAimGuide();
+    }
     this.renderHud();
   }
 
@@ -1164,6 +1186,7 @@ export class PlayMode {
       <div class="help glass">${esc(this.message)}</div>
       <div class="shotinfo glass">
         <div class="club"><button class="btn small icon-btn" data-act="clubup" title="Longer club (W)">▲</button><div><div class="cn">${esc(c.name)}</div><div class="cd">${c.putter ? `${Math.round((t ? Math.hypot(t.x - this.ball.x, t.z - this.ball.z) : 0) * COURSE_SCALE * 3.28)} ft to the hole` : `Full carry ≈ ${Math.round(this.predCarry * YARDS_PER_WORLD)} yds`}</div></div><button class="btn small icon-btn" data-act="clubdown" title="Shorter club (S)">▼</button></div>
+        <div class="flex"><button class="btn small" data-act="aiml" title="Aim left (A)">◀ Aim</button><button class="btn small" data-act="aimr" title="Aim right (D)">Aim ▶</button></div>
         <div class="lie">Lie: <b>${LIE_NAMES[s] ?? SURF_NAMES[s]}</b>${t ? ` · ${toT} yds to ${course ? 'the pin' : 'the flag'}` : ''}</div>
       </div>
       <div class="meter glass"><div class="track"><div class="fill"></div><div class="sweet"></div><div class="full"></div><div class="mark"></div>${c.putter ? '<div class="full putt-tick" style="background:#f0d48a;width:3px"></div>' : ''}</div><div class="hint"></div></div>

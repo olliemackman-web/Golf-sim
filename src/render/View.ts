@@ -197,6 +197,8 @@ export class View {
     }
     this.water.update();
     this.objects.update(dt * (g.paused ? 0 : 1));
+    this.objects.lodDistance = this.r.quality === 'high' ? 300 : this.r.quality === 'medium' ? 230 : 160;
+    this.objects.updateLod(this.r.camera.position);
     this.crowd.update(this.hideCrowd ? this.extraPeople : this.extraPeople.length ? g.sim.people.concat(this.extraPeople) : g.sim.people, this.r.camera.position);
     this.entities.hideBalls = this.hideSimBalls;
     this.entities.update(g.sim, g.course, dt, this.externalCamera ? 30 : this.cam.dist);

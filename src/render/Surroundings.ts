@@ -130,10 +130,11 @@ export class Surroundings {
       const d = Math.hypot(Math.max(0, -x, x - WORLD), Math.max(0, -z, z - WORLD));
       const dens = this.noise.fbm(x / 160, z / 160, 3) + 0.25 - d / 2000;
       if (dens < 0.05) continue;
-      const type = rng.pick(types);
+      const near = d < 70;
+      const type = rng.pick(types) + (near ? '' : '__lod');
       let b = batches.get(type);
       if (!b) {
-        b = new InstancedModel(type, this.group, 512, d < 80);
+        b = new InstancedModel(type, this.group, 512, near);
         batches.set(type, b);
       }
       q.setFromAxisAngle(UP, rng.range(0, 6.28));

@@ -6,6 +6,7 @@ import type { PlacedObject, Tree, World } from '../world/World';
 import { EVERGREEN, getMaterial } from './Materials';
 import { MODEL_KEYS, WINDMILL_ROTOR_POS, buildModel } from './Models';
 import type { ModelData } from './modelTypes';
+import { lodModel } from './lod';
 
 const tmpM = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
@@ -26,11 +27,13 @@ export class InstancedModel {
   }
 
   private build(): void {
-    const data: ModelData = buildModel(this.key);
+    const lod = this.key.endsWith('__lod');
+    const base = lod ? this.key.slice(0, -5) : this.key;
+    const data: ModelData = lod ? lodModel(base) : buildModel(this.key);
     const old = this.parts;
     this.parts = [];
     for (const p of data.parts) {
-      const matKey = p.mat === 'foliage' && EVERGREEN.has(this.key) ? 'foliage_ever' : p.mat;
+      const matKey = p.mat === 'foliage' && EVERGREEN.has(base) ? 'foliage_ever' : p.mat;
       const mesh = new THREE.InstancedMesh(p.geometry, getMaterial(matKey), this.capacity);
       mesh.castShadow = this.shadows && p.mat !== 'glass' && p.mat !== 'water' && p.mat !== 'glow';
       mesh.receiveShadow = true;
@@ -153,6 +156,10 @@ export class ObjectRenderer {
   private treeKey = new Map<number, string>();
   private rotors: { id: number; o: PlacedObject }[] = [];
   private rotorAngle = 0;
+  /** Trees currently drawn with the low-detail model. */
+  private treeLod = new Map<number, boolean>();
+  private lodCam = new THREE.Vector3(1e9, 0, 1e9);
+  lodDistance = 230;
 
   constructor(private world: World) {
     world.on('objectAdded', (o) => this.addObject(o));
@@ -211,14 +218,37 @@ export class ObjectRenderer {
     return out.compose(tmpP, tmpQ, tmpS);
   }
 
+  private treeBatchKey(t: Tree, lod: boolean): string {
+    return lod ? `${t.type}__lod` : t.type;
+  }
+
   addTree(t: Tree): void {
     this.treeKey.set(t.id, t.type);
-    this.batch(t.type).set(t.id, this.treeMatrix(t, tmpM));
+    const lod = Math.hypot(t.x - this.lodCam.x, t.z - this.lodCam.z) > this.lodDistance;
+    this.treeLod.set(t.id, lod);
+    this.batch(this.treeBatchKey(t, lod)).set(t.id, this.treeMatrix(t, tmpM));
   }
 
   removeTree(t: Tree): void {
-    this.batches.get(t.type)?.remove(t.id);
+    const lod = this.treeLod.get(t.id) ?? false;
+    this.batches.get(this.treeBatchKey(t, lod))?.remove(t.id);
     this.treeKey.delete(t.id);
+    this.treeLod.delete(t.id);
+  }
+
+  /** Swap trees between detailed and simple models based on distance from the camera. */
+  updateLod(cam: THREE.Vector3): void {
+    if (Math.hypot(cam.x - this.lodCam.x, cam.z - this.lodCam.z) < 25) return;
+    this.lodCam.set(cam.x, 0, cam.z);
+    const d2 = this.lodDistance * this.lodDistance;
+    for (const t of this.world.trees.values()) {
+      const lod = (t.x - cam.x) ** 2 + (t.z - cam.z) ** 2 > d2;
+      const cur = this.treeLod.get(t.id);
+      if (cur === lod) continue;
+      this.batches.get(this.treeBatchKey(t, !lod))?.remove(t.id);
+      this.treeLod.set(t.id, lod);
+      this.batch(this.treeBatchKey(t, lod)).set(t.id, this.treeMatrix(t, tmpM));
+    }
   }
 
   refreshHeights(): void {
@@ -226,7 +256,7 @@ export class ObjectRenderer {
       const key = this.objKey.get(o.id);
       if (key) this.batch(key).set(o.id, this.objectMatrix(o, tmpM));
     }
-    for (const t of this.world.trees.values()) this.batch(t.type).set(t.id, this.treeMatrix(t, tmpM));
+    for (const t of this.world.trees.values()) this.batch(this.treeBatchKey(t, this.treeLod.get(t.id) ?? false)).set(t.id, this.treeMatrix(t, tmpM));
   }
 
   update(dt: number): void {
