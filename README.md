@@ -6,6 +6,10 @@ Built with TypeScript and Three.js. Every model, texture and sound is generated 
 
 ## Play
 
+Play online at **https://olliemackman-web.github.io/Golf-sim/**, on desktop or phone.
+
+To run it locally:
+
 ```bash
 npm install
 npm run dev        # http://localhost:5173
