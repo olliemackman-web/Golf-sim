@@ -1,6 +1,7 @@
 // Scene setup: renderer, sky, lighting, day/night, post-processing.
 import { listen } from '../core/listeners';
 import * as THREE from 'three';
+import { reportError } from '../ui/errors';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -58,6 +59,10 @@ export class Renderer {
     r.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(r.domElement);
     r.domElement.style.display = 'block';
+    r.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      reportError('Graphics', 'The 3D view was lost, usually because the device ran low on memory. Reload the page, and choose Low graphics in Settings if it happens again.');
+    });
     r.domElement.classList.add('gl');
     this.renderer = r;
 
@@ -136,6 +141,7 @@ export class Renderer {
   setQuality(q: Quality): void {
     if (q === this.quality) return;
     this.quality = q;
+    this.frames = 0;
     this.prBase = basePixelRatio(q);
     this.prScale = 1;
     this.renderer.setPixelRatio(this.prBase);
@@ -260,6 +266,42 @@ export class Renderer {
     this.adapt();
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+    if (++this.frames === 30) this.checkBlank();
+  }
+
+  /** Called once if the picture is still completely black after the first frames (a broken GPU path). */
+  onBlank: (() => void) | null = null;
+  private frames = 0;
+
+  private checkBlank(): void {
+    if (!this.onBlank) return;
+    try {
+      const gl = this.renderer.getContext();
+      this.renderer.setRenderTarget(null);
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const px = new Uint8Array(4);
+      let lit = 0;
+      for (const [fx, fy] of [[0.5, 0.5], [0.25, 0.7], [0.75, 0.3], [0.5, 0.92], [0.1, 0.15]]) {
+        gl.readPixels(Math.floor(w * fx), Math.floor(h * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        if (px[0] + px[1] + px[2] > 6) lit++;
+      }
+      if (!lit) this.onBlank();
+    } catch {
+      /* reading pixels is only a health check */
+    }
+  }
+
+  /** One line about the graphics hardware, for Settings and error reports. */
+  describe(): string {
+    try {
+      const gl = this.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      const v2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+      return `${gpu} · WebGL ${v2 ? 2 : 1} · ${this.renderer.getPixelRatio().toFixed(2)}x · ${this.quality}`;
+    } catch {
+      return 'unknown';
+    }
   }
 
   // Automatic resolution: phones and weak laptops drop towards one pixel per CSS pixel when frames are

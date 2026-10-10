@@ -16,8 +16,10 @@ import { crest, icon } from './ui/icons';
 import { Tools } from './ui/Tools';
 import { UI } from './ui/UI';
 import { initInputMode, input } from './ui/touch';
+import { installErrorHandlers, notice, reportError } from './ui/errors';
 
 const container = document.getElementById('app')!;
+installErrorHandlers();
 initInputMode();
 const qs = new URLSearchParams(location.search);
 
@@ -52,6 +54,7 @@ class App implements AppApi {
     this.game = game;
     this.demo = demo;
     this.view = new View(container, game, this.settings.quality);
+    this.view.r.onBlank = () => this.blankView();
     this.tools = new Tools(this.view, game, {
       inspectObject: (id) => this.ui?.inspectObject(id),
       inspectPerson: (id) => this.ui?.inspectPerson(id),
@@ -75,6 +78,15 @@ class App implements AppApi {
     (window as unknown as Record<string, unknown>).game = game;
     (window as unknown as Record<string, unknown>).view = this.view;
     (window as unknown as Record<string, unknown>).app = this;
+  }
+
+  /** The first frames came out completely black: fall back to Low graphics, then explain if that fails too. */
+  private blankView(): void {
+    if (this.settings.quality !== 'low') {
+      this.settings.quality = 'low';
+      this.applySettings();
+      notice('The 3D view was blank on this device, so the game switched to Low graphics. You can change this in Settings.');
+    } else reportError('Graphics', `The 3D view stays blank on this device (${this.view.r.describe()}).`);
   }
 
   private unmount(): void {
@@ -245,7 +257,8 @@ class App implements AppApi {
       back.innerHTML = `<div class="window narrow"><div class="whead"><div class="wic">${icon('settings')}</div><h2>Settings</h2><button class="close" data-act="close">${icon('close')}</button></div><div class="wbody">
         <div class="field"><span class="label">Graphics quality</span><div class="seg">${(['low', 'medium', 'high'] as const).map((q) => `<button class="${s.quality === q ? 'on' : ''}" data-act="q" data-arg="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div></div>
         ${(['master', 'sfx', 'ambience', 'music'] as const).map((k) => `<div class="field"><label class="label" for="ms-${k}">${{ master: 'Master volume', sfx: 'Sound effects', ambience: 'Ambience', music: 'Music' }[k]}</label><input id="ms-${k}" type="range" min="0" max="1" step="0.05" value="${s[k]}" data-set="${k}"></div>`).join('')}
-        <div class="flex"><button class="btn small" data-act="music">${s.musicOn ? 'Music on' : 'Music off'}</button></div></div></div>`;
+        <div class="flex"><button class="btn small" data-act="music">${s.musicOn ? 'Music on' : 'Music off'}</button></div>
+        <p class="muted" style="font-size:11.5px;margin:14px 0 0;user-select:text">Graphics: ${esc(this.view?.r.describe() ?? '')}</p></div></div>`;
       for (const inp of Array.from(back.querySelectorAll('input[data-set]')) as HTMLInputElement[]) {
         inp.addEventListener('input', () => {
           (s as unknown as Record<string, number>)[inp.dataset.set!] = +inp.value;
@@ -401,6 +414,7 @@ const loop = (now: number) => {
     app.frame(now);
   } catch (e) {
     console.error(e);
+    reportError('Game', e);
   }
   requestAnimationFrame(loop);
 };

@@ -497,7 +497,8 @@ const PANELS: Record<PanelId, PanelDef> = {
       return `<div class="field"><span class="label">Graphics quality</span><div class="seg">${(['low', 'medium', 'high'] as const).map((q) => `<button class="${s.quality === q ? 'on' : ''}" data-act="quality" data-arg="${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
         <span class="muted" style="font-size:11.5px">High adds multisample anti-aliasing and sharper shadows. Use Low on older laptops.</span></div>
         ${vol('master', 'Master volume')}${vol('sfx', 'Sound effects')}${vol('ambience', 'Ambience')}${vol('music', 'Music')}
-        <div class="flex" style="margin-top:6px"><button class="btn small" data-act="toggle" data-arg="musicOn">${s.musicOn ? 'Music on' : 'Music off'}</button><button class="btn small" data-act="toggle" data-arg="autosave">${s.autosave ? 'Autosave on' : 'Autosave off'}</button></div>`;
+        <div class="flex" style="margin-top:6px"><button class="btn small" data-act="toggle" data-arg="musicOn">${s.musicOn ? 'Music on' : 'Music off'}</button><button class="btn small" data-act="toggle" data-arg="autosave">${s.autosave ? 'Autosave on' : 'Autosave off'}</button></div>
+        <p class="muted" style="font-size:11.5px;margin:14px 0 0;user-select:text">Graphics: ${esc(app.view.r.describe())}</p>`;
     },
     after: ({ app, body }) => {
       for (const inp of Array.from(body.querySelectorAll('input[data-set]')) as HTMLInputElement[]) {
