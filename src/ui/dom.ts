@@ -30,6 +30,13 @@ export function money(n: number, cents = false): string {
   return (neg ? '−$' : '$') + s;
 }
 
+/** Shorter money for the phone top bar: $123k instead of $123,456. */
+export function moneyShort(n: number): string {
+  const v = Math.abs(n);
+  if (v < 1e5 || v >= 1e6) return money(n);
+  return (n < 0 ? '−$' : '$') + Math.round(v / 1000) + 'k';
+}
+
 export function starsHtml(rep: number): string {
   const s = rep / 20;
   let out = '';

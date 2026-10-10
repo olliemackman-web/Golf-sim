@@ -12,6 +12,7 @@ import { drawChart } from './charts';
 import { bar, delegate, el, esc, money, starsHtml } from './dom';
 import { icon } from './icons';
 import type { UI } from './UI';
+import { canFullscreen, input, toggleFullscreen } from './touch';
 
 export type PanelId = 'finance' | 'visitors' | 'staff' | 'research' | 'marketing' | 'prices' | 'holes' | 'tournaments' | 'golfer' | 'menu' | 'tournamentResult' | 'settings' | 'help';
 
@@ -470,6 +471,7 @@ const PANELS: Record<PanelId, PanelDef> = {
         <button class="btn" data-act="save" data-arg="slot1">${icon('save')} Save game</button>
         <button class="btn" data-act="settings">${icon('settings')} Settings</button>
         <button class="btn" data-act="help">${icon('info')} How to play</button>
+        ${canFullscreen() ? `<button class="btn" data-act="fullscreen">${icon('eye')} ${document.fullscreenElement ? 'Exit full screen' : 'Full screen'}</button>` : ''}
         <button class="btn danger" data-act="quit">${icon('home')} Save and quit to title</button>
         <p class="muted" style="font-size:12px;margin:6px 0 0">${app.settings.autosave ? 'The game autosaves every night.' : 'Autosave is off.'}</p></div>`;
     },
@@ -479,6 +481,7 @@ const PANELS: Record<PanelId, PanelDef> = {
         ui.toast(ok ? 'Game saved' : 'Could not save — browser storage is unavailable', ok ? 'good' : 'bad');
       } else if (act === 'settings') ui.openPanel('settings');
       else if (act === 'help') ui.openPanel('help');
+      else if (act === 'fullscreen') toggleFullscreen();
       else if (act === 'quit') {
         app.saveGame('slot1');
         app.quitToMenu();
@@ -514,14 +517,15 @@ const PANELS: Record<PanelId, PanelDef> = {
   help: {
     title: 'How to Play', icon: 'info',
     render: () => `<div class="grid2">
-      <div class="tile"><h4>Camera</h4><p><span class="kbd">W A S D</span> or arrow keys to move · <span class="kbd">Q</span> <span class="kbd">E</span> to rotate · mouse wheel to zoom · right-drag to orbit · drag the map to pan. Click the minimap to jump.</p></div>
-      <div class="tile"><h4>Time</h4><p><span class="kbd">Space</span> pauses · <span class="kbd">1</span>–<span class="kbd">4</span> set the speed. Each night wages and upkeep are paid and the game autosaves.</p></div>
+      ${input.touch ? '<div class="tile"><h4>Camera</h4><p>Drag one finger to move · pinch to zoom · twist two fingers to rotate · slide two fingers up or down together to tilt. While a paint, tree, terrain or remove tool is selected, one finger paints and two fingers move the camera.</p></div>' : '<div class="tile"><h4>Camera</h4><p><span class="kbd">W A S D</span> or arrow keys to move · <span class="kbd">Q</span> <span class="kbd">E</span> to rotate · mouse wheel to zoom · right-drag to orbit · drag the map to pan. Click the minimap to jump.</p></div>'}
+      ${input.touch ? '<div class="tile"><h4>Time</h4><p>The pause button stops the clock and the speed button next to it cycles 1×, 2×, 4× and 8×. Each night wages and upkeep are paid and the game autosaves.</p></div>' : '<div class="tile"><h4>Time</h4><p><span class="kbd">Space</span> pauses · <span class="kbd">1</span>–<span class="kbd">4</span> set the speed. Each night wages and upkeep are paid and the game autosaves.</p></div>'}
+      ${input.touch ? '<div class="tile"><h4>Building</h4><p>Pick an item, tap the map to position it, then press <b>Place</b> in the bar above the dock. Use <b>Rotate</b> to turn it. Press Place again to add the next range bay in a row.</p></div>' : ''}
       <div class="tile"><h4>The range</h4><p>Build bays facing open land you own, plus a Ball Dispenser. Range Assistants collect balls from the field and refill the dispensers. Balls that land off your land are lost.</p></div>
-      <div class="tile"><h4>Holes</h4><p>Paint a Tee Box, Fairway and Green, then use New Hole: click the tee, then the green. Bunkers, water and trees improve ratings. Greenkeepers repair worn turf.</p></div>
+      <div class="tile"><h4>Holes</h4><p>Paint a Tee Box, Fairway and Green, then use New Hole: ${input.touch ? 'tap' : 'click'} the tee, then the green. Bunkers, water and trees improve ratings. Greenkeepers repair worn turf.</p></div>
       <div class="tile"><h4>Happy visitors</h4><p>Fair prices, short queues, toilets, food, scenery and well-kept turf make visitors happy. Happy visitors raise your reputation, which brings more and wealthier visitors.</p></div>
       <div class="tile"><h4>Progress</h4><p>Complete chapter goals to unlock new buildings and earn rewards. Research upgrades, buy more land, host tournaments and grow into a legendary resort.</p></div>
-      <div class="tile"><h4>Have a Go</h4><p>Click to start the swing meter, click again to set power, and once more as the marker returns to the line to set accuracy. Aim with <span class="kbd">A</span>/<span class="kbd">D</span> or by dragging, change club with the mouse wheel or <span class="kbd">Q</span>/<span class="kbd">E</span>.</p></div>
-      <div class="tile"><h4>Shortcuts</h4><p><span class="kbd">C</span> course · <span class="kbd">B</span> buildings · <span class="kbd">X</span> remove · <span class="kbd">H</span> holes · <span class="kbd">F</span> finances · <span class="kbd">R</span> rotate · <span class="kbd">[</span> <span class="kbd">]</span> brush size · <span class="kbd">Esc</span> cancel</p></div>
+      ${input.touch ? '<div class="tile"><h4>Have a Go</h4><p>Tap to start the swing meter, tap again to set power, and once more as the marker returns to the line to set accuracy. Drag sideways to aim, or use the Aim buttons. Change club with the ▲ ▼ buttons.</p></div>' : '<div class="tile"><h4>Have a Go</h4><p>Click to start the swing meter, click again to set power, and once more as the marker returns to the line to set accuracy. Aim with <span class="kbd">A</span>/<span class="kbd">D</span> or by dragging, change club with the mouse wheel or <span class="kbd">Q</span>/<span class="kbd">E</span>.</p></div>'}
+      <div class="tile kb-only"><h4>Shortcuts</h4><p><span class="kbd">C</span> course · <span class="kbd">B</span> buildings · <span class="kbd">X</span> remove · <span class="kbd">H</span> holes · <span class="kbd">F</span> finances · <span class="kbd">R</span> rotate · <span class="kbd">[</span> <span class="kbd">]</span> brush size · <span class="kbd">Esc</span> cancel</p></div>
     </div>`,
   },
 };

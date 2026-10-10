@@ -12,8 +12,10 @@ const read = (p) => fs.readFileSync(path.join(dist, p.replace(/^\.\//, '')), 'ut
 const js = scripts.map(read).join('\n').replace(/<\/script/gi, '<\\/script');
 const css = styles.map(read).join('\n');
 const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">';
-const body = `<title>Fairway Empire</title>\n${fonts}\n<style>${css}</style>\n<div id="app"></div>\n<script type="module">${js}</script>\n`;
+const viewport = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+const metas = `<meta name="viewport" content="${viewport}"><meta name="theme-color" content="#0b1a12"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`;
+const body = `<title>Fairway Empire</title>\n${metas}\n${fonts}\n<style>${css}</style>\n<div id="app"></div>\n<script type="module">${js}</script>\n`;
 fs.writeFileSync(path.join(dist, 'artifact.html'), body);
-const full = `<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">\n${body}</head><body></body></html>\n`;
+const full = `<!doctype html>\n<html lang="en"><head><meta charset="UTF-8">\n${body}</head><body></body></html>\n`;
 fs.writeFileSync(path.join(dist, 'fairway-empire.html'), full);
 console.log(`artifact.html ${(body.length / 1024).toFixed(0)} KB, fairway-empire.html ${(full.length / 1024).toFixed(0)} KB`);

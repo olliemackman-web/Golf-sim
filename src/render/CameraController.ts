@@ -16,12 +16,14 @@ export class CameraController {
   maxDist = 520;
   private drag: { mode: 'pan' | 'rotate'; x: number; y: number; ground: THREE.Vector3 | null } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
-  private pinch: { d: number; a: number; cx: number; cy: number } | null = null;
+  private pinch: { d: number; a: number; cx: number; cy: number; d0: number; sa: { x: number; y: number }; sb: { x: number; y: number }; mode: 'pinch' | 'tilt' | null } | null = null;
   /** Called with screen coords; returns ground point under cursor. */
   pickGround: ((x: number, y: number) => THREE.Vector3 | null) | null = null;
   bounds = { x0: -100, z0: -100, x1: WORLD + 100, z1: WORLD + 60 };
   /** When true, left-drag pans (no build tool active). */
   leftPans = true;
+  /** When true, a one-finger drag pans. Painting tools turn this off so one finger paints and two fingers move the camera. */
+  touchPans = true;
 
   constructor(public camera: THREE.PerspectiveCamera, private dom: HTMLElement, private world: World) {
     listen(dom, 'contextmenu', (e) => e.preventDefault());
@@ -63,10 +65,17 @@ export class CameraController {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.touches.size === 2) {
         const [a, b] = Array.from(this.touches.values());
-        this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), a: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        this.pinch = { d, a: Math.atan2(b.y - a.y, b.x - a.x), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d0: d, sa: { ...a }, sb: { ...b }, mode: null };
         this.drag = null;
         return;
       }
+      if (this.touches.size > 2) return;
+      if (this.touchPans) {
+        const g = this.pickGround?.(e.clientX, e.clientY) ?? null;
+        this.drag = { mode: 'pan', x: e.clientX, y: e.clientY, ground: g };
+      }
+      return;
     }
     if (e.button === 2 || (e.button === 0 && e.altKey)) {
       this.drag = { mode: 'rotate', x: e.clientX, y: e.clientY, ground: null };
@@ -81,13 +90,32 @@ export class CameraController {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pinch && this.touches.size === 2) {
         const [a, b] = Array.from(this.touches.values());
+        const p = this.pinch;
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
-        this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * (this.pinch.d / d), this.minDist, this.maxDist);
-        this.goal.yaw -= ang - this.pinch.a;
         const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-        this.panPixels(cx - this.pinch.cx, cy - this.pinch.cy);
-        this.pinch = { d, a: ang, cx, cy };
+        if (!p.mode) {
+          // decide once the fingers have moved: both sliding up or down side by side tilts, anything else pinches
+          const da = { x: a.x - p.sa.x, y: a.y - p.sa.y }, db = { x: b.x - p.sb.x, y: b.y - p.sb.y };
+          if (Math.max(Math.hypot(da.x, da.y), Math.hypot(db.x, db.y)) > 14) {
+            const vertical = Math.abs(da.y) > 2 * Math.abs(da.x) && Math.abs(db.y) > 2 * Math.abs(db.x) && da.y * db.y > 0;
+            const sideBySide = Math.abs(p.sb.x - p.sa.x) > Math.abs(p.sb.y - p.sa.y);
+            p.mode = vertical && sideBySide && Math.abs(d - p.d0) < 30 ? 'tilt' : 'pinch';
+          }
+        } else if (p.mode === 'tilt') {
+          this.goal.pitch = THREE.MathUtils.clamp(this.goal.pitch + (cy - p.cy) * 0.005, 0.25, 1.45);
+        } else {
+          this.goal.dist = THREE.MathUtils.clamp(this.goal.dist * (p.d / d), this.minDist, this.maxDist);
+          let da = ang - p.a;
+          if (da > Math.PI) da -= Math.PI * 2;
+          if (da < -Math.PI) da += Math.PI * 2;
+          this.goal.yaw -= da;
+          this.panPixels(cx - p.cx, cy - p.cy);
+        }
+        p.d = d;
+        p.a = ang;
+        p.cx = cx;
+        p.cy = cy;
         return;
       }
     }
@@ -115,7 +143,7 @@ export class CameraController {
 
   private onUp(e: PointerEvent): void {
     if (e.pointerType === 'touch') {
-      this.touches.delete(e.pointerId);
+      if (!this.touches.delete(e.pointerId)) return;
       if (this.touches.size < 2) this.pinch = null;
     }
     this.drag = null;

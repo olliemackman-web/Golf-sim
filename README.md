@@ -57,6 +57,20 @@ Six career chapters with 35 goals take you from *Breaking Ground* to *Legend of 
 | Golf: swing | click or Space (start, power, accuracy) |
 | Golf: camera | C |
 
+**On a phone or tablet** the layout switches to a compact version in portrait and landscape:
+
+| Action | Touch |
+| --- | --- |
+| Move camera | Drag one finger |
+| Zoom / rotate | Pinch / twist two fingers |
+| Tilt | Slide two fingers up or down together |
+| Build | Pick an item, tap the map to position it, then press **Place** (and **Rotate**) in the bar above the dock |
+| Paint, trees, terrain, remove | One finger paints; two fingers move the camera |
+| Goals and management | **Chapter** and **Manage** buttons under the top bar |
+| Golf | Drag to aim, tap to swing, tap again for power and accuracy (you can tap the meter itself) |
+
+The renderer lowers its resolution automatically if the frame rate drops, so it stays smooth on phones.
+
 ## Project layout
 
 ```

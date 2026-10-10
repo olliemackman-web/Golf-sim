@@ -12,6 +12,7 @@ import type { HoleInfo } from '../world/Course';
 import type { PlacedObject } from '../world/World';
 import { delegate, el, esc, money } from '../ui/dom';
 import { icon } from '../ui/icons';
+import { hint, input } from '../ui/touch';
 import { BallPhysics, Launch } from './BallPhysics';
 
 type Phase = 'aim' | 'power' | 'accuracy' | 'swing' | 'flight' | 'result' | 'between' | 'done';
@@ -127,6 +128,12 @@ export class PlayMode {
     this.hud = el('div', 'hud');
     app.view.container.appendChild(this.hud);
     delegate(this.hud, (act) => this.hudAction(act));
+    // touch screens: tapping the swing meter itself works like tapping the course
+    this.hud.addEventListener('pointerdown', (e) => {
+      if (!(e.target as HTMLElement).closest('.meter') || e.button > 0) return;
+      e.preventDefault();
+      this.click();
+    });
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -949,7 +956,7 @@ export class PlayMode {
     this.banner(name, `${this.strokes} strokes · ${fmtPar(toPar)}`);
     this.phase = 'between';
     this.resultT = 0;
-    this.message = this.holeIdx < this.holes.length - 1 ? 'Click to continue to the next hole' : 'Click to see your scorecard';
+    this.message = `${hint('Click', 'Tap')} ${this.holeIdx < this.holes.length - 1 ? 'to continue to the next hole' : 'to see your scorecard'}`;
     this.renderHud();
   }
 
@@ -1194,15 +1201,15 @@ export class PlayMode {
       headline = `<div class="holecard glass"><div class="label">${this.bay ? 'Your driving range' : 'Practice tee'}</div><div class="hn">${names[cfg.challenge]}</div>
         <div class="meta">${cfg.challenge === 'free' ? `<span>Balls hit: ${g.state.player.rangeBalls}</span>` : `<span>${this.shotsLeft} balls left</span>`}${cfg.challenge === 'target' ? `<span>${this.challengeScore} pts</span>` : ''}${cfg.challenge === 'longdrive' ? `<span>Best ${this.challengeBest} yds</span>` : ''}</div></div>`;
     }
-    const data = this.lastShot && !c.putter ? `<div class="data glass"><span class="k">Club</span><span class="v">${esc(this.lastShot.club)}</span>
-      <span class="k">Ball speed</span><span class="v">${this.lastShot.speed} mph</span><span class="k">Launch</span><span class="v">${this.lastShot.launch.toFixed(1)}°</span>
-      <span class="k">Spin</span><span class="v">${this.lastShot.spin} rpm</span><span class="k">Apex</span><span class="v">${this.lastShot.apex} ft</span>
+    const data = this.lastShot && !c.putter ? `<div class="data glass"><span class="k x">Club</span><span class="v x">${esc(this.lastShot.club)}</span>
+      <span class="k">Ball speed</span><span class="v">${this.lastShot.speed} mph</span><span class="k x">Launch</span><span class="v x">${this.lastShot.launch.toFixed(1)}°</span>
+      <span class="k x">Spin</span><span class="v x">${this.lastShot.spin} rpm</span><span class="k x">Apex</span><span class="v x">${this.lastShot.apex} ft</span>
       <span class="k">Carry</span><span class="v">${this.lastShot.carry} yds</span><span class="k">Total</span><span class="v">${this.lastShot.total} yds</span>
       <span class="k">Offline</span><span class="v">${Math.abs(this.lastShot.offline)} ${this.lastShot.offline > 0 ? 'R' : this.lastShot.offline < 0 ? 'L' : ''}</span></div>` : '';
     this.hud.innerHTML = `${headline}
-      <div class="wind glass"><div class="arrow"><span style="display:block;transform:rotate(${(-windRel * 180) / Math.PI}deg)">${icon('arrow')}</span></div><div><div class="label">Wind</div><div style="font-weight:800;font-size:16px">${this.wind.mph} mph</div></div></div>
-      <div class="topright-btns"><button class="btn small" data-act="cam">${icon('camera')} ${this.camMode === 'behind' ? 'Overhead' : 'Behind'} (C)</button><button class="btn small" data-act="quit">${icon('close')} Menu</button></div>
-      <div class="help glass">${esc(this.message)}</div>
+      <div class="hud-tr"><div class="wind glass"><div class="arrow"><span style="display:block;transform:rotate(${(-windRel * 180) / Math.PI}deg)">${icon('arrow')}</span></div><div><div class="label">Wind</div><div class="wv">${this.wind.mph} mph</div></div></div>
+      <div class="topright-btns"><button class="btn small" data-act="cam" title="${this.camMode === 'behind' ? 'Overhead' : 'Behind'} view">${icon('camera')}<span class="long"> ${this.camMode === 'behind' ? 'Overhead' : 'Behind'}<span class="kb-only"> (C)</span></span></button><button class="btn small" data-act="quit" title="Pause menu">${icon('menu')}<span class="long"> Menu</span></button></div></div>
+      ${this.message ? `<div class="help glass">${esc(this.message)}</div>` : ''}
       <div class="shotinfo glass">
         <div class="club"><button class="btn small icon-btn" data-act="clubup" title="Longer club (W)">▲</button><div><div class="cn">${esc(c.name)}</div><div class="cd">${c.putter ? `${Math.round((t ? Math.hypot(t.x - this.ball.x, t.z - this.ball.z) : 0) * COURSE_SCALE * 3.28)} ft to the hole` : `Full carry ≈ ${Math.round(this.predCarry * YARDS_PER_WORLD)} yds`}</div></div><button class="btn small icon-btn" data-act="clubdown" title="Shorter club (S)">▼</button></div>
         <div class="flex"><button class="btn small" data-act="aiml" title="Aim left (A)">◀ Aim</button><button class="btn small" data-act="aimr" title="Aim right (D)">Aim ▶</button></div>
@@ -1236,12 +1243,19 @@ export class PlayMode {
     fill.style.width = this.phase === 'aim' ? '0%' : `${(Math.max(0, showPower) / 1.3) * 100}%`;
     mark.style.left = pos(this.phase === 'aim' ? 0 : this.meter);
     mark.style.display = this.phase === 'power' || this.phase === 'accuracy' ? 'block' : 'none';
-    const msg: Record<Phase, string> = {
-      aim: this.club.putter ? 'Aim with A/D or right-drag · Click or Space to start the putt' : 'Aim with A/D or right-drag · W/S or wheel to change club · Click or Space to swing',
-      power: 'Click to set power',
-      accuracy: 'Click as the marker crosses the line',
-      swing: '', flight: '', result: 'Click to continue', between: 'Click to continue', done: '',
-    };
+    const msg: Record<Phase, string> = input.touch
+      ? {
+          aim: this.club.putter ? 'Drag to aim · Tap to start the putt' : 'Drag to aim · Tap to swing',
+          power: 'Tap to set power',
+          accuracy: 'Tap as the marker crosses the line',
+          swing: '', flight: '', result: 'Tap to continue', between: 'Tap to continue', done: '',
+        }
+      : {
+          aim: this.club.putter ? 'Aim with A/D or right-drag · Click or Space to start the putt' : 'Aim with A/D or right-drag · W/S or wheel to change club · Click or Space to swing',
+          power: 'Click to set power',
+          accuracy: 'Click as the marker crosses the line',
+          swing: '', flight: '', result: 'Click to continue', between: 'Click to continue', done: '',
+        };
     hint.textContent = msg[this.phase];
   }
 }

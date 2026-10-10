@@ -9,13 +9,14 @@ import { VISITOR_TYPES } from '../data/visitors';
 import { CARPARK_SLOTS } from '../data/layout';
 import type { NotifyKind } from '../sim/Game';
 import type { Person } from '../sim/agents';
-import { bar, delegate, el, esc, money, starsHtml } from './dom';
+import { bar, delegate, el, esc, money, moneyShort, starsHtml } from './dom';
 import { crest, icon } from './icons';
 import { Minimap } from './Minimap';
 import { openPanel, PanelId } from './panels';
 import { thumbnail } from './Thumbs';
 import { TerraMode, ToolHost } from './Tools';
 import { terrainUniforms } from '../render/TerrainRenderer';
+import { input, isCompact } from './touch';
 
 type Category = 'range' | 'course' | 'buildings' | 'scenery' | 'trees' | 'landscape' | 'land' | 'bulldoze' | null;
 
@@ -51,6 +52,9 @@ export class UI implements ToolHost {
   private holeLabels = new Map<number, HTMLDivElement>();
   private parcelLabels: HTMLDivElement[] = [];
   private goalsMin = false;
+  private tbar: HTMLDivElement;
+  private tbarHtml = '';
+  private compact: boolean | null = null;
 
   constructor(private app: AppApi) {
     const game = app.game;
@@ -67,20 +71,28 @@ export class UI implements ToolHost {
         <div class="stat clickable" data-act="panel" data-arg="finance"><span class="k">Balance</span><span class="v money" data-k="money"></span></div>
         <div class="stat"><span class="k" data-k="date"></span><span class="v" data-k="time"></span></div>
         <div class="stat hide-sm"><span class="k">Weather</span><span class="v" data-k="weather"></span></div>
-        <div class="stat clickable" data-act="panel" data-arg="visitors"><span class="k">Reputation</span><span class="v" data-k="rep"></span></div>
+        <div class="stat clickable" data-act="panel" data-arg="visitors"><span class="k"><span class="long">Reputation</span><span class="short">Rating</span></span><span class="v" data-k="rep"></span></div>
         <div class="stat clickable hide-sm" data-act="panel" data-arg="visitors"><span class="k">On site</span><span class="v" data-k="guests"></span></div>
       </div>
+      <div class="tb-break"></div>
+      <button class="pill glass goals-pill" data-act="goalspill">${icon('trophy')}<span data-k="goalpill"></span></button>
+      <button class="pill glass play-pill" data-act="panel" data-arg="golfer">${icon('golfer')}<span>Play</span></button>
       <div class="spacer"></div>
+      <button class="pill glass mgmt-pill" data-act="mgmtpill">${icon('finance')}<span>Manage</span></button>
       <div class="speed glass">
         <button data-act="speed" data-arg="0" title="Pause (Space)">${icon('pause')}</button>
-        <button data-act="speed" data-arg="1" title="Normal speed (1)">1×</button>
-        <button data-act="speed" data-arg="2" title="Fast (2)">2×</button>
-        <button data-act="speed" data-arg="4" title="Faster (3)">4×</button>
-        <button data-act="speed" data-arg="8" title="Fastest (4)">8×</button>
+        <button class="sp-full" data-act="speed" data-arg="1" title="Normal speed (1)">1×</button>
+        <button class="sp-full" data-act="speed" data-arg="2" title="Fast (2)">2×</button>
+        <button class="sp-full" data-act="speed" data-arg="4" title="Faster (3)">4×</button>
+        <button class="sp-full" data-act="speed" data-arg="8" title="Fastest (4)">8×</button>
+        <button class="sp-cycle" data-act="speedcycle" data-k="cycle" title="Change speed">1×</button>
         <button data-act="panel" data-arg="menu" title="Menu (Esc)">${icon('menu')}</button>
       </div>`;
     this.root.appendChild(this.top);
-    delegate(this.top, (act, arg) => this.action(act, arg));
+    // on phones the goals, management menu and inspector live inside the top bar and handle their own clicks
+    delegate(this.top, (act, arg, t) => {
+      if (!t.closest('.goals, .mgmt, .inspector')) this.action(act, arg);
+    });
 
     // ---------------------------------------------------- goals
     this.goalsEl = el('div', 'goals glass');
@@ -98,16 +110,21 @@ export class UI implements ToolHost {
     this.palette = el('div', 'palette glass');
     this.palette.hidden = true;
     this.dock = el('div', 'dock glass');
-    const cats: [Category, string, string][] = [
-      ['range', 'range', 'Range'], ['course', 'course', 'Course'], ['buildings', 'building', 'Build'], ['scenery', 'scenery', 'Decor'],
-      ['trees', 'tree', 'Trees'], ['landscape', 'landscape', 'Terrain'], ['land', 'land', 'Land'], ['bulldoze', 'bulldoze', 'Remove'],
+    const cats: [Category, string, string, string][] = [
+      ['range', 'range', 'Range', 'Range'], ['course', 'course', 'Course', 'Course'], ['buildings', 'building', 'Build', 'Build'], ['scenery', 'scenery', 'Decor', 'Decor'],
+      ['trees', 'tree', 'Trees', 'Trees'], ['landscape', 'landscape', 'Terrain', 'Shape'], ['land', 'land', 'Land', 'Land'], ['bulldoze', 'bulldoze', 'Remove', 'Remove'],
     ];
-    this.dock.innerHTML = cats.map(([c, ic, label]) => `<button data-act="cat" data-arg="${c}" title="${label}">${icon(ic)}<span>${label}</span></button>`).join('') +
-      `<div class="sep"></div><button class="play" data-act="panel" data-arg="golfer" title="Have a go yourself">${icon('golfer')}<span>Have a Go</span></button>`;
-    this.dockWrap.append(this.palette, this.dock);
+    const lab = (long: string, short: string) => (long === short ? `<span>${long}</span>` : `<span><span class="long">${long}</span><span class="short">${short}</span></span>`);
+    this.dock.innerHTML = cats.map(([c, ic, label, short]) => `<button data-act="cat" data-arg="${c}" title="${label}">${icon(ic)}${lab(label, short)}</button>`).join('') +
+      `<div class="sep"></div><button class="play" data-act="panel" data-arg="golfer" title="Have a go yourself">${icon('golfer')}${lab('Have a Go', 'Play')}</button>`;
+    // touch screens: tool info and Place/Rotate buttons sit just above the palette
+    this.tbar = el('div', 'touchbar glass');
+    this.tbar.hidden = true;
+    this.dockWrap.append(this.tbar, this.palette, this.dock);
     this.root.appendChild(this.dockWrap);
     delegate(this.dock, (act, arg) => this.action(act, arg));
     delegate(this.palette, (act, arg) => this.action(act, arg));
+    delegate(this.tbar, (_act, arg) => this.app.tools.touchAction(arg));
 
     // ---------------------------------------------------- management
     this.mgmt = el('div', 'mgmt glass');
@@ -141,7 +158,55 @@ export class UI implements ToolHost {
     game.events.on('tournamentEnd', (t) => openPanel(this.app, this, 'tournamentResult', t));
 
     listen(window, 'keydown', (e) => this.onKey(e));
+    // phones: re-home the drop-downs and toasts when the screen size or orientation changes
+    this.applyLayout();
+    listen(window, 'resize', () => this.applyLayout());
+    listen(app.view.r.renderer.domElement, 'pointerdown', () => this.closeDropdowns());
     this.refresh(true);
+  }
+
+  /** The compact (phone) layout hangs the goals, management menu and inspector from the top bar and stacks toasts above the dock. */
+  private applyLayout(): void {
+    const compact = isCompact();
+    if (compact === this.compact) return;
+    this.compact = compact;
+    const host = compact ? this.top : this.root;
+    host.append(this.goalsEl, this.mgmt, this.inspector);
+    if (compact) this.dockWrap.prepend(this.toasts);
+    else this.root.insertBefore(this.toasts, this.inspector);
+    this.closeDropdowns();
+  }
+
+  private closeDropdowns(): void {
+    if (!this.compact) return;
+    this.goalsEl.classList.remove('mobile-open');
+    this.mgmt.classList.remove('open');
+    for (const b of Array.from(this.top.querySelectorAll('.pill'))) b.classList.remove('on');
+  }
+
+  private toggleDropdown(which: 'goals' | 'mgmt'): void {
+    const el = which === 'goals' ? this.goalsEl : this.mgmt;
+    const cls = which === 'goals' ? 'mobile-open' : 'open';
+    const open = !el.classList.contains(cls);
+    this.closeDropdowns();
+    if (open) {
+      el.classList.add(cls);
+      this.top.querySelector(which === 'goals' ? '.goals-pill' : '.mgmt-pill')?.classList.add('on');
+      this.inspecting = null;
+      this.inspector.hidden = true;
+    }
+  }
+
+  touchBar(html: string | null): void {
+    if (!html) {
+      this.tbar.hidden = true;
+      this.tbarHtml = '';
+      return;
+    }
+    this.tbar.hidden = false;
+    if (html === this.tbarHtml) return;
+    this.tbarHtml = html;
+    this.tbar.innerHTML = html;
   }
 
   // ---------------------------------------------------------------- ToolHost
@@ -190,7 +255,7 @@ export class UI implements ToolHost {
       t.remove();
     });
     this.toasts.appendChild(t);
-    while (this.toasts.children.length > 5) this.toasts.firstElementChild?.remove();
+    while (this.toasts.children.length > (this.compact ? 3 : 5)) this.toasts.firstElementChild?.remove();
     const life = kind === 'goal' ? 9000 : kind === 'bad' ? 7000 : 5000;
     setTimeout(() => {
       t.classList.add('out');
@@ -218,9 +283,24 @@ export class UI implements ToolHost {
         break;
       }
       case 'panel':
+        this.closeDropdowns();
         this.openPanel(arg as PanelId);
         break;
+      case 'speedcycle': {
+        const order = [1, 2, 4, 8];
+        game.speed = game.paused ? game.speed : order[(order.indexOf(game.speed) + 1) % order.length];
+        game.paused = false;
+        this.refresh(true);
+        break;
+      }
+      case 'goalspill':
+        this.toggleDropdown('goals');
+        break;
+      case 'mgmtpill':
+        this.toggleDropdown('mgmt');
+        break;
       case 'cat':
+        this.closeDropdowns();
         this.setCategory(this.cat === arg ? null : (arg as Category));
         break;
       case 'item':
@@ -323,7 +403,7 @@ export class UI implements ToolHost {
       case 'range':
         title = 'Driving Range';
         items = ITEM_LIST.filter((d) => d.cat === 'range' && !d.hidden).map((d) => this.itemCard(d, t.kind === 'place' && t.item === d.id)).join('');
-        opts = t.kind === 'place' ? `<button class="btn small" data-act="rotate">${icon('rotate')} Rotate (R)</button><span class="muted">Bays hit balls away from their back bench. Drag to place a row.</span>` : '<span class="muted">Build bays facing open land you own. Balls landing off your property are lost.</span>';
+        opts = t.kind === 'place' ? `<button class="btn small" data-act="rotate">${icon('rotate')} Rotate<span class="kb-only"> (R)</span></button><span class="muted">Bays hit balls away from their back bench. <span class="kb-only">Drag to place a row.</span><span class="touch-only">Press Place again to add the next bay in the row.</span></span>` : '<span class="muted">Build bays facing open land you own. Balls landing off your property are lost.</span>';
         break;
       case 'course': {
         title = 'Course Design';
@@ -336,19 +416,19 @@ export class UI implements ToolHost {
         items = `<button class="card ${t.kind === 'hole' ? 'on' : ''}" data-act="holetool" title="Place a tee and a pin to create a hole"><div class="thumb" style="color:var(--brass-2)">${icon('hole', '')}</div><div class="meta"><div class="nm">New Hole</div><div class="pr">$500</div></div></button>` + items;
         items += ITEM_LIST.filter((d) => d.cat === 'course' && !d.hidden).map((d) => this.itemCard(d, t.kind === 'place' && t.item === d.id)).join('');
         if (t.kind === 'paint') opts = this.brushOpts() + `<button class="btn small" data-act="overlay">${icon('eye')} ${terrainUniforms.uOverlay.value > 0.5 ? 'Hide' : 'Show'} turf condition</button>`;
-        else if (t.kind === 'hole') opts = '<span class="muted">Click a <b>Tee Box</b> tile, then a <b>Green</b> tile. Par is set by the length.</span>';
+        else if (t.kind === 'hole') opts = `<span class="muted">${input.touch ? 'Tap' : 'Click'} a <b>Tee Box</b> tile, then a <b>Green</b> tile. Par is set by the length.</span>`;
         else opts = '<span class="muted">Paint a tee box, fairway and green, then use <b>New Hole</b> to place the tee markers and pin.</span>';
         break;
       }
       case 'buildings':
         title = 'Buildings';
         items = ITEM_LIST.filter((d) => d.cat === 'buildings' && !d.hidden).map((d) => this.itemCard(d, t.kind === 'place' && t.item === d.id)).join('');
-        opts = t.kind === 'place' ? `<button class="btn small" data-act="rotate">${icon('rotate')} Rotate (R)</button><span class="muted">Entrances face the arrow side. Visitors walk to the front door.</span>` : '';
+        opts = t.kind === 'place' ? `<button class="btn small" data-act="rotate">${icon('rotate')} Rotate<span class="kb-only"> (R)</span></button><span class="muted">${esc(ITEMS[t.item!]?.desc ?? '')}</span>` : '';
         break;
       case 'scenery':
         title = 'Decoration';
         items = ITEM_LIST.filter((d) => d.cat === 'scenery' && !d.hidden).map((d) => this.itemCard(d, t.kind === 'place' && t.item === d.id)).join('');
-        opts = '<span class="muted">Scenery raises visitor happiness and hole ratings nearby. Drag to place rows of small items.</span>';
+        opts = '<span class="muted">Scenery raises visitor happiness and hole ratings nearby.<span class="kb-only"> Drag to place rows of small items.</span></span>';
         break;
       case 'trees':
         title = 'Trees';
@@ -359,14 +439,14 @@ export class UI implements ToolHost {
         title = 'Terrain';
         const modes: [TerraMode, string, string][] = [['raise', 'raise', 'Raise'], ['lower', 'lower', 'Lower'], ['flatten', 'flatten', 'Flatten'], ['smooth', 'smooth', 'Smooth']];
         items = modes.map(([m, ic, n]) => `<button class="card ${t.kind === 'terraform' && t.terra === m ? 'on' : ''}" data-act="terra" data-arg="${m}"><div class="thumb" style="color:var(--brass-2)">${icon(ic)}</div><div class="meta"><div class="nm">${n}</div><div class="pr">$15 per dab</div></div></button>`).join('');
-        opts = this.brushOpts([2, 3, 5, 7, 9]) + '<span class="muted">Hold the mouse to shape the land. Water levels follow the terrain.</span>';
+        opts = this.brushOpts([2, 3, 5, 7, 9]) + `<span class="muted">${input.touch ? 'Hold a finger' : 'Hold the mouse'} to shape the land. Water levels follow the terrain.</span>`;
         break;
       }
       case 'land': {
         title = 'Buy Land';
         const owned = g.world.ownedCount();
         items = '';
-        opts = `<span class="muted">You own <b>${owned}</b> of ${PARCELS * PARCELS} parcels. Click a highlighted parcel next to your land to buy it. Prices rise with every purchase.</span>`;
+        opts = `<span class="muted">You own <b>${owned}</b> of ${PARCELS * PARCELS} parcels. ${input.touch ? 'Tap' : 'Click'} a highlighted parcel next to your land to buy it. Prices rise with every purchase.</span>`;
         break;
       }
       case 'bulldoze':
@@ -474,6 +554,7 @@ export class UI implements ToolHost {
           <button class="btn small danger" data-act="delhole" data-arg="${h.save.id}">${icon('trash')} Delete</button>
         </div>`;
     }
+    if (this.inspector.hidden) this.closeDropdowns();
     this.inspector.innerHTML = html;
     this.inspector.hidden = false;
   }
@@ -674,9 +755,17 @@ export class UI implements ToolHost {
     q('club').textContent = st.clubName;
     q('chapter').textContent = st.sandbox ? 'Sandbox' : st.chapter > CHAPTERS.length ? 'Career complete' : `Chapter ${st.chapter} · ${CHAPTERS[st.chapter - 1].title}`;
     const m = q('money');
-    m.textContent = money(st.money);
+    m.textContent = this.compact ? moneyShort(st.money) : money(st.money);
     m.style.color = st.money < 0 ? 'var(--red)' : '';
-    q('date').textContent = `${g.dayName()} · Day ${st.day} · ${g.seasonName}`;
+    q('date').innerHTML = `<span class="long">${g.dayName()} · Day ${st.day} · ${g.seasonName}</span><span class="short">Day ${st.day} · ${g.seasonName.slice(0, 3)}</span>`;
+    q('cycle').textContent = `${g.speed}×`;
+    const pill = q('goalpill');
+    if (st.sandbox) pill.textContent = 'Sandbox';
+    else if (st.chapter > CHAPTERS.length) pill.textContent = 'Career complete';
+    else {
+      const ch = CHAPTERS[st.chapter - 1];
+      pill.textContent = `Chapter ${ch.num} · ${ch.goals.filter((x) => st.goalsDone.includes(x.id)).length}/${ch.goals.length}`;
+    }
     q('time').innerHTML = `${g.timeString()}${g.paused ? ' <small>paused</small>' : ''}`;
     const wk = st.weather.kind;
     q('weather').innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:18px;height:18px;display:inline-block">${icon(wk)}</span><small>${st.weather.wind} mph</small></span>`;
@@ -686,6 +775,7 @@ export class UI implements ToolHost {
       const s = +(b as HTMLElement).dataset.arg!;
       b.classList.toggle('on', s === 0 ? g.paused : !g.paused && g.speed === s);
     }
+    q('cycle').classList.toggle('on', !g.paused && g.speed > 1);
     this.renderGoals();
     if (force) this.renderPalette();
   }

@@ -15,8 +15,10 @@ import { delegate, el, esc, money } from './ui/dom';
 import { crest, icon } from './ui/icons';
 import { Tools } from './ui/Tools';
 import { UI } from './ui/UI';
+import { initInputMode, input } from './ui/touch';
 
 const container = document.getElementById('app')!;
+initInputMode();
 const qs = new URLSearchParams(location.search);
 
 const SFX = new Set<string>(['click', 'hover', 'open', 'close', 'build', 'bulldoze', 'paint', 'error', 'cash', 'notify', 'goal', 'unlock', 'levelup', 'swing', 'hit_driver', 'hit_iron', 'hit_wedge', 'putt', 'cup', 'bounce', 'land_sand', 'splash', 'tree_hit', 'range_hit', 'applause', 'cheer', 'groan', 'car_door', 'car_pass', 'whoosh']);
@@ -57,6 +59,7 @@ class App implements AppApi {
       confirm: (t, b, ok, cb) => this.ui?.confirm(t, b, ok, cb),
       toast: (t, k) => this.ui?.toast(t, k),
       onToolChanged: () => this.ui?.onToolChanged(),
+      touchBar: (h) => this.ui?.touchBar(h),
       sfx: (n) => this.sfx(n),
     });
     this.hookSounds();
@@ -277,7 +280,7 @@ class App implements AppApi {
       ${!sandbox && saveMeta('slot1') ? '<p class="muted" style="font-size:12px">Starting a new career replaces your current save.</p>' : ''}
       <div class="flex" style="justify-content:flex-end"><button class="btn" data-act="close">Cancel</button><button class="btn primary" data-act="start">Start</button></div></div></div>`;
     container.appendChild(back);
-    (back.querySelector('#ng-club') as HTMLInputElement).focus();
+    if (!input.touch) (back.querySelector('#ng-club') as HTMLInputElement).focus(); // phones: don't pop the keyboard straight away
     delegate(back, (act) => {
       this.sfx('click');
       if (act === 'close') back.remove();
@@ -310,12 +313,17 @@ class App implements AppApi {
       <h2 class="serif" style="font-size:32px;margin:8px 0 6px">Welcome to ${esc(this.game.state.clubName)}</h2>
       <p style="line-height:1.55;color:var(--cream-dim)">The land is yours, the bank balance is ${money(this.game.state.money)}, and the locals want somewhere to hit balls. Here's how to get started:</p>
       <ol style="line-height:1.7;padding-left:20px;margin:6px 0 14px">
-        <li>Open <b>Range</b> in the bottom bar and place four <b>Grass Tee Bays</b> in a row. They hit towards the open field (rotate with <span class="kbd">R</span>).</li>
+        ${input.touch
+          ? `<li>Open <b>Range</b> in the bottom bar and pick <b>Grass Tee Bay</b>. Tap the map next to the road, then press <b>Place</b> four times to build a row. Bays hit towards the open field (use <b>Rotate</b> to turn them).</li>
+        <li>Add a <b>Ball Dispenser</b> nearby, then hire a <b>Range Assistant</b> from Manage → Staff.</li>
+        <li>Tap the speed button at the top to speed up time and watch the visitors arrive.</li>
+        <li>Tap <b>Play</b> any time to step up and hit balls yourself.</li>`
+          : `<li>Open <b>Range</b> in the bottom bar and place four <b>Grass Tee Bays</b> in a row. They hit towards the open field (rotate with <span class="kbd">R</span>).</li>
         <li>Add a <b>Ball Dispenser</b> nearby, then hire a <b>Range Assistant</b> from Staff.</li>
         <li>Press <span class="kbd">2</span> or <span class="kbd">4</span> to speed up time and watch the visitors arrive.</li>
-        <li>Click <b>Have a Go</b> any time to step up and hit balls yourself.</li>
+        <li>Click <b>Have a Go</b> any time to step up and hit balls yourself.</li>`}
       </ol>
-      <p class="muted" style="font-size:12.5px">Follow the chapter goals on the left to unlock holes, buildings and tournaments.</p>
+      <p class="muted" style="font-size:12.5px">Follow the chapter goals ${input.touch ? 'under the top bar' : 'on the left'} to unlock holes, buildings and tournaments.</p>
       <div class="flex" style="justify-content:flex-end"><button class="btn primary" data-act="ok">Let's build</button></div></div></div>`;
     ui.root.appendChild(back);
     delegate(back, () => {
@@ -379,8 +387,9 @@ const HELP_HTML = `<div class="grid2">
   <div class="tile"><h4>Design holes</h4><p>Paint a tee box, fairway and green with the Course tools, then place the tee and pin with New Hole. Ratings improve with bunkers, water, trees and good turf.</p></div>
   <div class="tile"><h4>Run the club</h4><p>Hire staff, set prices, research upgrades, run marketing and keep visitors happy with food, restrooms and scenery.</p></div>
   <div class="tile"><h4>Grow</h4><p>Buy land, upgrade the clubhouse, attract members and host tournaments on your way to a five-star resort.</p></div>
-  <div class="tile"><h4>Have a go</h4><p>Play your own range and course: click to start the swing meter, click for power, and click on the line for accuracy. Win challenge prizes and level up your golfer.</p></div>
-  <div class="tile"><h4>Controls</h4><p>WASD / arrows move the camera, Q/E rotate, mouse wheel zooms, right-drag orbits. Space pauses, 1–4 change speed.</p></div>
+  <div class="tile"><h4>Have a go</h4><p>Play your own range and course: click or tap to start the swing meter, again for power, and once more on the line for accuracy. Win challenge prizes and level up your golfer.</p></div>
+  <div class="tile"><h4>Keyboard and mouse</h4><p>WASD / arrows move the camera, Q/E rotate, mouse wheel zooms, right-drag orbits. Space pauses, 1–4 change speed.</p></div>
+  <div class="tile"><h4>Touch</h4><p>Drag to move the camera, pinch to zoom, twist two fingers to rotate and slide two fingers up or down to tilt. Tap the map to position a building, then press Place.</p></div>
 </div>`;
 
 const app = new App();

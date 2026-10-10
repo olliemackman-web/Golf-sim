@@ -48,7 +48,8 @@ export class Renderer {
   constructor(private container: HTMLElement, quality: Quality) {
     this.quality = quality;
     const r = new THREE.WebGLRenderer({ antialias: quality === 'low', powerPreference: 'high-performance', preserveDrawingBuffer: false });
-    r.setPixelRatio(Math.min(window.devicePixelRatio, quality === 'high' ? 2 : quality === 'medium' ? 1.5 : 1));
+    this.prBase = basePixelRatio(quality);
+    r.setPixelRatio(this.prBase);
     r.setSize(container.clientWidth, container.clientHeight);
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 0.95;
@@ -135,7 +136,9 @@ export class Renderer {
   setQuality(q: Quality): void {
     if (q === this.quality) return;
     this.quality = q;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1));
+    this.prBase = basePixelRatio(q);
+    this.prScale = 1;
+    this.renderer.setPixelRatio(this.prBase);
     const ss = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1024;
     this.sun.shadow.mapSize.set(ss, ss);
     this.sun.shadow.map?.dispose();
@@ -254,7 +257,48 @@ export class Renderer {
   }
 
   render(): void {
+    this.adapt();
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }
+
+  // Automatic resolution: phones and weak laptops drop towards one pixel per CSS pixel when frames are
+  // slow, and climb back when there is headroom.
+  private prBase = 1;
+  private prScale = 1;
+  private fpsT = 0;
+  private fpsN = 0;
+  private fpsLast = 0;
+  private fpsGood = 0;
+
+  private adapt(): void {
+    const now = performance.now();
+    const dt = now - this.fpsLast;
+    this.fpsLast = now;
+    if (dt <= 0 || dt > 400) return; // first frame, hidden tab or a hitch
+    this.fpsT += dt;
+    this.fpsN++;
+    if (this.fpsT < 2000) return;
+    const fps = (this.fpsN * 1000) / this.fpsT;
+    this.fpsT = 0;
+    this.fpsN = 0;
+    const minScale = Math.min(1, 1 / this.prBase);
+    if (fps < 38 && this.prScale > minScale + 0.01) {
+      this.prScale = Math.max(minScale, this.prScale - 0.15);
+      this.fpsGood = 0;
+      this.renderer.setPixelRatio(this.prBase * this.prScale);
+      this.resize();
+    } else if (fps > 57 && this.prScale < 1) {
+      if (++this.fpsGood >= 4) {
+        this.fpsGood = 0;
+        this.prScale = Math.min(1, this.prScale + 0.1);
+        this.renderer.setPixelRatio(this.prBase * this.prScale);
+        this.resize();
+      }
+    } else this.fpsGood = 0;
+  }
+}
+
+function basePixelRatio(q: Quality): number {
+  return Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1);
 }

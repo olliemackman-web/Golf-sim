@@ -10,6 +10,7 @@ import type { Game } from '../sim/Game';
 import { parFor } from '../world/Course';
 import { footprint } from '../world/World';
 import { esc, money } from './dom';
+import { input } from './touch';
 
 export type ToolKind = 'select' | 'place' | 'paint' | 'tree' | 'hole' | 'bulldoze' | 'terraform' | 'land';
 export type TerraMode = 'raise' | 'lower' | 'flatten' | 'smooth';
@@ -22,7 +23,11 @@ export interface ToolHost {
   toast(text: string, kind: 'info' | 'good' | 'bad'): void;
   onToolChanged(): void;
   sfx(name: string): void;
+  /** Touch screens: show tool info and buttons in a bar above the dock (null hides it). */
+  touchBar(html: string | null): void;
 }
+
+const STROKE_TOOLS: ToolKind[] = ['paint', 'tree', 'bulldoze', 'terraform'];
 
 export class Tools {
   kind: ToolKind = 'select';
@@ -49,6 +54,11 @@ export class Tools {
   private mouse = { x: 0, y: 0 };
   private canvas: HTMLCanvasElement;
   showCondition = false;
+  // touch: strokes wait a moment so a two-finger camera gesture never paints
+  private touches = new Set<number>();
+  private multiTouch = false;
+  private pending: { t: number } | null = null;
+  private downHover: { x: number; y: number; wx: number; wz: number } | null = null;
 
   constructor(private view: View, private game: Game, private host: ToolHost) {
     this.canvas = view.r.renderer.domElement;
@@ -64,7 +74,15 @@ export class Tools {
     listen(this.canvas, 'pointermove', (e) => this.onMove(e));
     listen(this.canvas, 'pointerdown', (e) => this.onDown(e));
     listen(window, 'pointerup', (e) => this.onUp(e));
-    listen(this.canvas, 'pointerleave', () => {
+    listen(window, 'pointercancel', (e) => {
+      if (e.pointerType !== 'touch') return;
+      this.touches.delete(e.pointerId);
+      if (!this.touches.size) this.multiTouch = false;
+      this.down = null;
+      this.pending = null;
+    });
+    listen(this.canvas, 'pointerleave', (e) => {
+      if (e.pointerType === 'touch') return; // keep the ghost where the finger left it
       this.tip.hidden = true;
       this.hover = null;
       this.clearHighlight();
@@ -81,12 +99,87 @@ export class Tools {
     this.holeTee = null;
     this.holeLine.visible = false;
     this.removeGhost();
+    if (input.touch) this.hover = null;
     this.view.cam.leftPans = kind === 'select';
+    this.view.cam.touchPans = !STROKE_TOOLS.includes(kind);
     terrainUniforms.uGrid.value = kind === 'select' ? 0 : 1;
     terrainUniforms.uOwnership.value = kind === 'land' ? 1 : kind === 'select' ? 0.35 : 0.7;
     this.clearHighlight();
     this.host.onToolChanged();
+    this.updateTouchBar(null);
   }
+
+  private isStroke(): boolean {
+    return STROKE_TOOLS.includes(this.kind);
+  }
+
+  /** Buttons in the touch bar. */
+  touchAction(act: string): void {
+    if (act === 'rotate' && this.kind === 'place') {
+      this.rot = (this.rot + 1) % 4;
+      this.removeGhost();
+      this.refreshHover();
+    } else if (act === 'place') this.placeAtHover();
+    else if (act === 'canceltee') this.cancel();
+    else if (act === 'done') this.setTool('select');
+    this.host.sfx('click');
+  }
+
+  /** Touch: place the item under the ghost, then move the ghost along so repeated taps build a row. */
+  private placeAtHover(): void {
+    const hv = this.hover;
+    if (!hv || this.kind !== 'place' || !this.item) return;
+    const def = ITEMS[this.item];
+    const f = footprint(def, this.rot);
+    const x = hv.x - Math.floor((f.w - 1) / 2), y = hv.y - Math.floor((f.h - 1) / 2);
+    const r = this.game.placeItem(this.item, x, y, this.rot);
+    if (!r.ok) {
+      if (r.reason) this.host.toast(r.reason, 'bad');
+      return;
+    }
+    if (def.w * def.h <= 2) {
+      const nx = this.rot % 2 === 0 ? hv.x + f.w : hv.x, ny = this.rot % 2 === 0 ? hv.y : hv.y + f.h;
+      if (inMap(nx, ny)) this.hover = { x: nx, y: ny, wx: (nx + 0.5) * TILE, wz: (ny + 0.5) * TILE };
+    }
+    this.refreshHover();
+  }
+
+  /** What the touch bar says before the player has tapped the map. */
+  private touchIdle(): string | null {
+    switch (this.kind) {
+      case 'place':
+        return this.item ? `<b>${esc(ITEMS[this.item].name)}</b> <span class="cost">${money(ITEMS[this.item].cost)}</span><br><span class="muted">Tap the map to position it</span>` : null;
+      case 'paint':
+        return `<b>${SURF_NAMES[this.surf]}</b> <span class="cost">${money(SURF_COST[this.surf] ?? 0)}/tile</span><br><span class="muted">Drag one finger to paint · two fingers move the camera</span>`;
+      case 'tree':
+        return `<b>${esc(ITEMS[this.treeType].name)}</b> <span class="cost">${money(ITEMS[this.treeType].cost)}</span> each<br><span class="muted">Tap or drag one finger to plant · two fingers move the camera</span>`;
+      case 'bulldoze':
+        return '<b>Remove</b><br><span class="muted">Tap or drag one finger to remove · two fingers move the camera</span>';
+      case 'terraform':
+        return `<b>${this.terra[0].toUpperCase() + this.terra.slice(1)} land</b> <span class="cost">$15</span> per dab<br><span class="muted">Hold one finger to shape · two fingers move the camera</span>`;
+      case 'land':
+        return '<b>Buy land</b><br><span class="muted">Tap a highlighted parcel next to your land</span>';
+      case 'hole':
+        return this.editHole ? `Tap a <b>${this.editHole.which === 'tee' ? 'Tee Box' : 'Green'}</b> tile for the new ${this.editHole.which}` : '<b>Step 1:</b> tap a <b>Tee Box</b> tile<br><span class="muted">Paint one with the Course tools first</span>';
+      default:
+        return null;
+    }
+  }
+
+  private updateTouchBar(info: string | null): void {
+    if (!input.touch || this.kind === 'select') {
+      this.host.touchBar(null);
+      return;
+    }
+    const html = info ?? this.touchIdle();
+    let btns = '';
+    if (this.kind === 'place') {
+      btns = `<button class="btn small" data-act="tt" data-arg="rotate">Rotate</button>`;
+      if (this.hover) btns += `<button class="btn small primary" data-act="tt" data-arg="place" ${this.placeOk ? '' : 'disabled'}>Place</button>`;
+    } else if (this.kind === 'hole' && this.holeTee) btns = '<button class="btn small" data-act="tt" data-arg="canceltee">Undo tee</button>';
+    this.host.touchBar(html || btns ? `<div class="tb-info">${html ?? ''}</div>${btns ? `<div class="tb-btns">${btns}</div>` : ''}` : null);
+  }
+  private placeOk = false;
 
   cancel(): void {
     if (this.kind === 'hole' && this.holeTee) {
@@ -145,6 +238,11 @@ export class Tools {
   }
 
   private showTip(html: string | null): void {
+    if (input.touch) {
+      this.tip.hidden = true;
+      this.updateTouchBar(html);
+      return;
+    }
     if (!html) {
       this.tip.hidden = true;
       return;
@@ -157,6 +255,26 @@ export class Tools {
   }
 
   private onMove(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      if (this.multiTouch || !this.down) return;
+      this.mouse = { x: e.clientX, y: e.clientY };
+      if (Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) > 8) this.down.moved = true;
+      if (!this.isStroke()) return; // one-finger drags pan the camera
+      this.hover = this.view.pickTile(e.clientX, e.clientY);
+      if (this.pending) {
+        if (this.down.moved) this.beginStroke();
+        return;
+      }
+      this.refreshHover();
+      this.dragAction();
+      return;
+    }
+    if (input.touch && e.pointerType === 'mouse') {
+      // a mouse on a touch laptop: switch hints back
+      input.touch = false;
+      document.body.classList.remove('touch');
+      this.host.touchBar(null);
+    }
     this.mouse = { x: e.clientX, y: e.clientY };
     if (this.down && Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) > 6) this.down.moved = true;
     this.hover = this.view.pickTile(e.clientX, e.clientY);
@@ -171,6 +289,7 @@ export class Tools {
       return;
     }
     const g = this.game;
+    this.placeOk = false;
     switch (this.kind) {
       case 'select': {
         this.clearHighlight();
@@ -191,6 +310,7 @@ export class Tools {
         const unlocked = g.isUnlocked(def);
         const cost = def.cost + can.treeCost;
         const ok = can.ok && unlocked.ok && g.canAfford(cost);
+        this.placeOk = ok;
         this.setHighlight(x, y, x + f.w - 1, y + f.h - 1, ok);
         const key = modelKeyFor({ id: 0, type: def.id, x, y, rot: this.rot, level: 1 });
         if (this.ghostKey !== key) {
@@ -217,7 +337,7 @@ export class Tools {
         let reason = can.reason ?? unlocked.reason ?? (!g.canAfford(cost) ? 'Not enough money' : '');
         if (def.kind === 'bay' && ok) reason = '';
         const facing = def.kind === 'bay' ? ` <span class="muted">· hits ${['north', 'west', 'south', 'east'][this.rot]}</span>` : '';
-        this.showTip(`<b>${esc(def.name)}</b> <span class="cost">${money(cost)}</span>${facing}${reason ? `<br><span class="bad">${esc(reason)}</span>` : ''}<br><span class="muted">R to rotate · Esc to cancel</span>`);
+        this.showTip(`<b>${esc(def.name)}</b> <span class="cost">${money(cost)}</span>${facing}${reason ? `<br><span class="bad">${esc(reason)}</span>` : ''}<span class="kb-only"><br><span class="muted">R to rotate · Esc to cancel</span></span>`);
         break;
       }
       case 'paint': {
@@ -226,7 +346,7 @@ export class Tools {
         const xs = tiles.map((t) => t.x), ys = tiles.map((t) => t.y);
         this.setHighlight(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), g.canAfford(cost) && g.world.isOwnedTile(hv.x, hv.y));
         const owned = g.world.isOwnedTile(hv.x, hv.y);
-        this.showTip(`<b>${SURF_NAMES[this.surf]}</b> <span class="cost">${money(SURF_COST[this.surf] ?? 0)}/tile</span>${cost ? ` · ${money(cost)}` : ''}${owned ? '' : '<br><span class="bad">You do not own this land</span>'}<br><span class="muted">[ ] brush size · ${this.brush}×${this.brush}</span>`);
+        this.showTip(`<b>${SURF_NAMES[this.surf]}</b> <span class="cost">${money(SURF_COST[this.surf] ?? 0)}/tile</span>${cost ? ` · ${money(cost)}` : ''}${owned ? '' : '<br><span class="bad">You do not own this land</span>'}<span class="kb-only"><br><span class="muted">[ ] brush size · ${this.brush}×${this.brush}</span></span>`);
         break;
       }
       case 'tree': {
@@ -250,7 +370,7 @@ export class Tools {
         const tiles = this.brushTiles(hv.x, hv.y);
         const xs = tiles.map((t) => t.x), ys = tiles.map((t) => t.y);
         this.setHighlight(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), g.world.isOwnedTile(hv.x, hv.y));
-        this.showTip(`<b>${this.terra[0].toUpperCase() + this.terra.slice(1)} land</b> <span class="cost">$15</span> per dab · height ${g.world.heightAt(hv.wx, hv.wz).toFixed(1)}m<br><span class="muted">Hold to apply · [ ] brush size</span>`);
+        this.showTip(`<b>${this.terra[0].toUpperCase() + this.terra.slice(1)} land</b> <span class="cost">$15</span> per dab · height ${g.world.heightAt(hv.wx, hv.wz).toFixed(1)}m<span class="kb-only"><br><span class="muted">Hold to apply · [ ] brush size</span></span>`);
         break;
       }
       case 'land': {
@@ -272,7 +392,7 @@ export class Tools {
           break;
         }
         if (!this.holeTee) {
-          this.showTip(s === Surf.Tee ? 'Click to place the <b>tee markers</b>' : '<b>Step 1:</b> click a <b>Tee Box</b> tile<br><span class="muted">Paint one with the Course tab first</span>');
+          this.showTip(s === Surf.Tee ? `${input.touch ? 'Tap' : 'Click'} to place the <b>tee markers</b>` : `<b>Step 1:</b> ${input.touch ? 'tap' : 'click'} a <b>Tee Box</b> tile<br><span class="muted">Paint one with the Course tools first</span>`);
         } else {
           const tx = (this.holeTee.x + 0.5) * TILE, tz = (this.holeTee.y + 0.5) * TILE;
           const px = (hv.x + 0.5) * TILE, pz = (hv.y + 0.5) * TILE;
@@ -283,7 +403,7 @@ export class Tools {
           pos.needsUpdate = true;
           this.holeLine.computeLineDistances();
           this.holeLine.visible = true;
-          this.showTip(`<b>Step 2:</b> click a <b>Green</b> tile for the pin<br>${yds} yds straight line · about par ${parFor(yds)}${s !== Surf.Green ? '<br><span class="bad">The pin must be on a Green</span>' : ''}`);
+          this.showTip(`<b>Step 2:</b> ${input.touch ? 'tap' : 'click'} a <b>Green</b> tile for the pin<br>${yds} yds straight line · about par ${parFor(yds)}${s !== Surf.Green ? '<br><span class="bad">The pin must be on a Green</span>' : ''}`);
         }
         break;
       }
@@ -291,7 +411,31 @@ export class Tools {
   }
 
   private onDown(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      this.touches.add(e.pointerId);
+      if (this.touches.size > 1) {
+        // a second finger: this is a camera gesture, so drop whatever the first finger started
+        this.multiTouch = true;
+        this.down = null;
+        this.pending = null;
+        return;
+      }
+      this.multiTouch = false;
+      this.mouse = { x: e.clientX, y: e.clientY };
+      this.down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
+      this.downHover = this.view.pickTile(e.clientX, e.clientY);
+      this.lastPaintTile = null;
+      this.placedThisDrag.clear();
+      if (this.isStroke() && this.downHover) {
+        this.hover = this.downHover;
+        this.pending = { t: performance.now() };
+        this.refreshHover();
+      }
+      return;
+    }
     if (e.button !== 0) return;
+    this.mouse = { x: e.clientX, y: e.clientY };
+    this.hover = this.view.pickTile(e.clientX, e.clientY) ?? this.hover;
     this.down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
     this.lastPaintTile = null;
     this.placedThisDrag.clear();
@@ -303,7 +447,62 @@ export class Tools {
     if (this.kind === 'paint' || this.kind === 'tree' || this.kind === 'bulldoze' || this.kind === 'place') this.dragAction(true);
   }
 
+  /** Touch: the finger stayed down long enough (or moved) without a second finger joining, so start painting. */
+  private beginStroke(): void {
+    this.pending = null;
+    if (!this.down || !this.downHover) return;
+    const cur = this.hover;
+    this.hover = this.downHover;
+    if (this.kind === 'terraform') {
+      this.flattenH = this.game.world.heightAt(this.downHover.wx, this.downHover.wz);
+      this.terraT = 0;
+    } else {
+      this.dragAction(true);
+      if (cur && (cur.x !== this.downHover.x || cur.y !== this.downHover.y)) {
+        this.hover = cur;
+        this.dragAction();
+      }
+    }
+    this.hover = cur ?? this.downHover;
+    this.refreshHover();
+  }
+
+  private onTouchUp(e: PointerEvent): void {
+    if (!this.touches.delete(e.pointerId)) return;
+    if (this.multiTouch) {
+      if (!this.touches.size) this.multiTouch = false;
+      this.down = null;
+      return;
+    }
+    if (!this.down) return;
+    const tap = !this.down.moved;
+    this.down = null;
+    if (!tap) {
+      this.pending = null;
+      return;
+    }
+    this.hover = this.downHover;
+    if (!this.hover) return;
+    if (this.pending) {
+      // a quick tap with a painting tool: one dab
+      this.pending = null;
+      if (this.kind === 'terraform') {
+        const h = this.hover;
+        const r = this.game.terraform(h.wx, h.wz, this.brush * TILE * 0.55, this.terra, this.game.world.heightAt(h.wx, h.wz));
+        if (!r.ok && r.reason) this.host.toast(r.reason, 'bad');
+      } else this.dragAction(true);
+      this.refreshHover();
+      return;
+    }
+    this.refreshHover();
+    if (this.kind !== 'place') this.clickAction();
+  }
+
   private onUp(e: PointerEvent): void {
+    if (e.pointerType === 'touch') {
+      this.onTouchUp(e);
+      return;
+    }
     if (e.button !== 0 || !this.down) return;
     const click = !this.down.moved;
     this.down = null;
@@ -456,7 +655,8 @@ export class Tools {
   }
 
   update(dt: number): void {
-    if (this.kind === 'terraform' && this.down && this.hover) {
+    if (this.pending && this.down && !this.multiTouch && performance.now() - this.pending.t > 140) this.beginStroke();
+    if (this.kind === 'terraform' && this.down && this.hover && !this.pending) {
       this.terraT -= dt;
       if (this.terraT <= 0) {
         this.terraT = 0.09;
@@ -468,7 +668,7 @@ export class Tools {
       }
     }
     // keep the ghost/tooltip in sync while the camera moves
-    if (this.kind !== 'select' && !this.view.cam.isDragging() && this.mouse.x) {
+    if (!input.touch && this.kind !== 'select' && !this.view.cam.isDragging() && this.mouse.x) {
       const hv = this.view.pickTile(this.mouse.x, this.mouse.y);
       if (hv && (!this.hover || hv.x !== this.hover.x || hv.y !== this.hover.y)) {
         this.hover = hv;

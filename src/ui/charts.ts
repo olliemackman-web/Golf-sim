@@ -17,10 +17,10 @@ export function drawChart(canvas: HTMLCanvasElement, labels: string[], series: S
   const padL = 56, padR = 10, padT = 10, padB = 22;
   const all = series.flatMap((s) => s.values);
   let max = Math.max(0, ...all), min = Math.min(0, ...all);
-  if (max === min) max = min + 1;
+  if (max === min) max = min + 100; // no data yet: show a sensible empty axis
   const span = max - min;
   const nice = Math.pow(10, Math.floor(Math.log10(span / 4)));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * nice).find((s) => span / s <= 5) ?? nice * 10;
+  const step = Math.max(1, [1, 2, 2.5, 5, 10].map((m) => m * nice).find((s) => span / s <= 5) ?? nice * 10); // whole units only
   max = Math.ceil(max / step) * step;
   min = Math.floor(min / step) * step;
   const y = (v: number) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
