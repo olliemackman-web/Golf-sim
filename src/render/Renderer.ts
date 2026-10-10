@@ -1,7 +1,6 @@
 // Scene setup: renderer, sky, lighting, day/night, post-processing.
 import { listen } from '../core/listeners';
 import * as THREE from 'three';
-import { reportError } from '../ui/errors';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -24,8 +23,35 @@ export interface EnvState {
   wind: number; // mph
 }
 
+// One WebGL context for the whole session (title screen and every game). Phones, Safari above all, drop the
+// main context when a page keeps creating new ones, so the game never makes a second.
+let sharedGL: THREE.WebGLRenderer | null = null;
+let sharedLost = false;
+
+/** Phones and small tablets get lighter shadows and post-processing to save graphics memory. */
+const PHONE = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 900;
+
 export class Renderer {
+  /** The renderer currently using the shared context (context-loss events go to it). */
+  static current: Renderer | null = null;
+  /** Forget the shared context so the next Renderer creates a fresh one (after an unrecoverable loss). */
+  static dropShared(): void {
+    try {
+      sharedGL?.dispose();
+    } catch {
+      /* already gone */
+    }
+    sharedGL?.domElement.remove();
+    sharedGL = null;
+    sharedLost = false;
+  }
+
   renderer: THREE.WebGLRenderer;
+  contextLost = false;
+  onContextLost: (() => void) | null = null;
+  onContextRestored: (() => void) | null = null;
+  /** Runs at the start of every frame with the shared renderer (used to draw build-menu thumbnails). */
+  beforeFrame: ((r: THREE.WebGLRenderer) => void) | null = null;
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   sun: THREE.DirectionalLight;
@@ -48,22 +74,33 @@ export class Renderer {
 
   constructor(private container: HTMLElement, quality: Quality) {
     this.quality = quality;
-    const r = new THREE.WebGLRenderer({ antialias: quality === 'low', powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    let r = sharedGL && !sharedLost ? sharedGL : null;
+    if (!r) {
+      if (sharedGL) Renderer.dropShared();
+      r = new THREE.WebGLRenderer({ antialias: quality === 'low', powerPreference: 'high-performance', preserveDrawingBuffer: false });
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      r.outputColorSpace = THREE.SRGBColorSpace;
+      r.shadowMap.enabled = true;
+      r.shadowMap.type = THREE.PCFShadowMap;
+      r.domElement.style.display = 'block';
+      r.domElement.classList.add('gl');
+      r.domElement.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault(); // lets the browser give the context back
+        sharedLost = true;
+        Renderer.current?.lost();
+      });
+      r.domElement.addEventListener('webglcontextrestored', () => {
+        sharedLost = false;
+        Renderer.current?.restored();
+      });
+      sharedGL = r;
+    }
+    Renderer.current = this;
+    r.toneMappingExposure = 0.95;
     this.prBase = basePixelRatio(quality);
     r.setPixelRatio(this.prBase);
     r.setSize(container.clientWidth, container.clientHeight);
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 0.95;
-    r.outputColorSpace = THREE.SRGBColorSpace;
-    r.shadowMap.enabled = true;
-    r.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(r.domElement);
-    r.domElement.style.display = 'block';
-    r.domElement.addEventListener('webglcontextlost', (e) => {
-      e.preventDefault();
-      reportError('Graphics', 'The 3D view was lost, usually because the device ran low on memory. Reload the page, and choose Low graphics in Settings if it happens again.');
-    });
-    r.domElement.classList.add('gl');
     this.renderer = r;
 
     this.camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.3, 6000);
@@ -106,7 +143,7 @@ export class Renderer {
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff1dc, 2.6);
     this.sun.castShadow = true;
-    const ss = quality === 'high' ? 4096 : quality === 'medium' ? 2048 : 1024;
+    const ss = shadowSize(quality);
     this.sun.shadow.mapSize.set(ss, ss);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.6;
@@ -128,13 +165,13 @@ export class Renderer {
       return;
     }
     const size = r.getDrawingBufferSize(new THREE.Vector2());
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0 });
+    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: this.quality === 'high' && !PHONE ? 4 : 0 });
     const comp = new EffectComposer(r, rt);
     comp.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.15, 0.4, 1.1);
     comp.addPass(this.bloom);
     comp.addPass(new OutputPass());
-    if (this.quality === 'medium') comp.addPass(new SMAAPass());
+    if (this.quality === 'medium' && !PHONE) comp.addPass(new SMAAPass()); // phone screens are dense enough without it
     this.composer = comp;
   }
 
@@ -145,7 +182,7 @@ export class Renderer {
     this.prBase = basePixelRatio(q);
     this.prScale = 1;
     this.renderer.setPixelRatio(this.prBase);
-    const ss = q === 'high' ? 4096 : q === 'medium' ? 2048 : 1024;
+    const ss = shadowSize(q);
     this.sun.shadow.mapSize.set(ss, ss);
     this.sun.shadow.map?.dispose();
     this.sun.shadow.map = null;
@@ -262,8 +299,47 @@ export class Renderer {
     }
   }
 
+  private lost(): void {
+    this.contextLost = true;
+    this.onContextLost?.();
+  }
+
+  private restored(): void {
+    this.contextLost = false;
+    this.lastEnvKey = ''; // the sky reflection has to be rebuilt
+    this.frames = 0;
+    this.onContextRestored?.();
+  }
+
+  /** Free this scene's GPU resources but keep the shared context for the next scene. */
+  dispose(): void {
+    if (Renderer.current === this) Renderer.current = null;
+    try {
+      this.composer?.dispose();
+      this.bloom?.dispose();
+      this.envRT?.dispose();
+      this.pmrem.dispose();
+      this.sun.shadow.dispose();
+      const seen = new Set<THREE.BufferGeometry>();
+      this.scene.traverse((o) => {
+        const g = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+        if (g && !seen.has(g)) {
+          seen.add(g);
+          g.dispose();
+        }
+      });
+      for (const k of ['uSplatA', 'uSplatB', 'uInfo'] as const) (terrainUniforms[k].value as THREE.Texture | null)?.dispose();
+      this.renderer.renderLists.dispose();
+    } catch {
+      /* best effort */
+    }
+    this.renderer.domElement.remove();
+  }
+
   render(): void {
+    if (this.contextLost) return;
     this.adapt();
+    this.beforeFrame?.(this.renderer);
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
     if (++this.frames === 30) this.checkBlank();
@@ -339,6 +415,11 @@ export class Renderer {
       }
     } else this.fpsGood = 0;
   }
+}
+
+function shadowSize(q: Quality): number {
+  if (PHONE) return q === 'high' ? 2048 : 1024;
+  return q === 'high' ? 4096 : q === 'medium' ? 2048 : 1024;
 }
 
 function basePixelRatio(q: Quality): number {

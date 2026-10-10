@@ -9,6 +9,8 @@ import { CLUB_NAME_IDEAS } from './data/visitors';
 import { buildDemo } from './demo';
 import { PlayMode } from './play/PlayMode';
 import { View } from './render/View';
+import { Renderer } from './render/Renderer';
+import { drawPendingThumbnails } from './ui/Thumbs';
 import { loadSettings, loadState, saveGame, saveMeta, storeSettings } from './save';
 import { Game } from './sim/Game';
 import { delegate, el, esc, money } from './ui/dom';
@@ -55,6 +57,9 @@ class App implements AppApi {
     this.demo = demo;
     this.view = new View(container, game, this.settings.quality);
     this.view.r.onBlank = () => this.blankView();
+    this.view.r.beforeFrame = drawPendingThumbnails;
+    this.view.r.onContextLost = () => this.contextLost();
+    this.view.r.onContextRestored = () => clearTimeout(this.lostTimer);
     this.tools = new Tools(this.view, game, {
       inspectObject: (id) => this.ui?.inspectObject(id),
       inspectPerson: (id) => this.ui?.inspectPerson(id),
@@ -89,6 +94,39 @@ class App implements AppApi {
     } else reportError('Graphics', `The 3D view stays blank on this device (${this.view.r.describe()}).`);
   }
 
+  // The browser took the 3D context away (on phones: low memory, or the tab was in the background).
+  // Give it a moment to hand it back; if it doesn't, save and rebuild the view on Low graphics.
+  private lostTimer = 0;
+  private recoveries = 0;
+
+  private contextLost(): void {
+    notice('The 3D view was interrupted, usually because the device ran low on memory. Restarting it…');
+    clearTimeout(this.lostTimer);
+    this.lostTimer = window.setTimeout(() => {
+      if (this.view?.r.contextLost) this.recoverGraphics();
+    }, 2500);
+  }
+
+  private recoverGraphics(): void {
+    if (this.recoveries >= 2) {
+      reportError('Graphics', 'The 3D view keeps getting lost on this device. Your club is saved: close other tabs and apps, then reload.');
+      return;
+    }
+    this.recoveries++;
+    if (this.settings.quality !== 'low') {
+      this.settings.quality = 'low';
+      storeSettings(this.settings);
+    }
+    const wasDemo = this.demo;
+    const saved = !wasDemo && saveGame(this.game, 'slot1');
+    this.unmount();
+    Renderer.dropShared();
+    if (wasDemo) this.showTitle();
+    else if (saved) this.loadSlot('slot1');
+    else this.mount(this.game, false);
+    notice('The game restarted the 3D view with Low graphics to use less memory. You can change this in Settings.');
+  }
+
   private unmount(): void {
     if (!this.view) return;
     this.play?.exit();
@@ -96,10 +134,9 @@ class App implements AppApi {
     this.ui?.root.remove();
     this.ui = null;
     resetListeners();
-    const r = this.view.r.renderer;
+    // free this scene's GPU memory but keep the one shared WebGL context
+    this.view.r.dispose();
     container.innerHTML = '';
-    r.dispose();
-    r.forceContextLoss();
   }
 
   private hookSounds(): void {
